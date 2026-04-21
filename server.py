@@ -496,18 +496,16 @@ def check_controlpanel_portable():
 
 
 def get_self_contained_runtime_status() -> dict:
-    """Return deployment status for bundled runtimes required by controlpanel."""
+    """Return deployment status for bundled runtimes required by analysis server."""
     analysis = check_analysis_portable()
+    # Keep these fields for compatibility with existing API consumers, but do
+    # not treat them as blockers in the standalone analysis repository.
     controlpanel = check_controlpanel_portable()
     model_runtime = os.path.isfile(os.path.join(BASE_DIR, "model", "core", "bin", "python-3.9.7-amd64", "python.exe"))
 
     warnings = []
-    if not controlpanel.get("ready"):
-        warnings.append(controlpanel.get("details") or "Controlpanel runtime is not ready.")
     if not analysis.get("ready"):
         warnings.append(analysis.get("details") or "Analysis runtime is not ready.")
-    if not model_runtime:
-        warnings.append("model/core/bin/python-3.9.7-amd64/python.exe not found. Simulation launch via __start__.bat may fail.")
 
     return {
         "status": "ready" if not warnings else "incomplete",
@@ -3599,8 +3597,8 @@ def tail_log(run_root, run_id, log_name, tail_lines=200):
 class ControlPanelHandler(SimpleHTTPRequestHandler):
     """Serves the integrated control-panel SPA and all JSON APIs."""
 
-    run_root = DEFAULT_RUN_DIR
-    ui_profile = DEFAULT_UI_PROFILE
+    run_root = None
+    ui_profile = {}
 
     def __init__(self, *args, **kwargs):
         self._webdir = os.path.dirname(os.path.abspath(__file__))
