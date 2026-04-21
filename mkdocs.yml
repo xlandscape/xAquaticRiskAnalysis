@@ -1,0 +1,52 @@
+site_name: xAquaticRiskAnalysis Documentation
+site_url: https://xlandscape.github.io/xAquaticRiskAnalysis/
+use_directory_urls: false
+plugins:
+  - search
+
+repo_url: https://github.com/xlandscape/xAquaticRiskAnalysis
+repo_name: xAquaticRiskAnalysis on GitHub
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue grey
+      accent: light blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue grey
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    logo: material/chart-areaspline
+  favicon: img/chart-areaspline.svg
+  features:
+    - content.code.copy
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - toc.integrate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.details
+  - pymdownx.superfences
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: 'index.md'
+  - Get Started: 'getstarted/getstarted.md'
+  - Reference:
+    - Configuration: 'reference/configuration.md'
+    - API Endpoints: 'reference/api.md'
