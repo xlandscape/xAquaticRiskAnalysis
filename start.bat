@@ -45,4 +45,4 @@ if exist "!~dp0analysis\python\python.exe" (
 )
 
 echo.
-"!PYTHON_EXE!" "!~dp0server.py" --port !XAQ_PORT! --run-dir "!XAQ_RUN_DIR!" %*
+!PYTHON_EXE! "%~dp0server.py" --port !XAQ_PORT! --run-dir "!XAQ_RUN_DIR!" %*
