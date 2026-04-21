@@ -1,0 +1,2586 @@
+﻿"""
+xAquaticRisk Control Panel â€” unified web server.
+
+Merges the parameterisation editor (WebUI) and run monitoring dashboard
+into a single application served from one HTTP port.
+
+Endpoints
+~~~~~~~~~
+    Static
+        GET  /                          â†’ index.html
+    Parameterisation
+        GET  /api/template              â†’ parsed template.xrun with metadata
+        GET  /api/scenarios             â†’ available landscape scenarios
+        POST /api/run                   â†’ create xrun & launch __start__.bat
+        POST /api/save                  â†’ save current parameterisation
+        POST /api/save-as               â†’ save parameterisation to custom file
+        POST /api/open-xrun             â†’ load an existing xrun file
+        POST /api/xrun-files            â†’ list xrun files in a directory
+    Monitoring
+        GET  /api/runs                  â†’ list of all simulation runs
+        GET  /api/runs/<id>             â†’ detailed run info (includes abortable flag)
+        GET  /api/runs/<id>/log/<name>  â†’ tail parsed log entries
+        POST /api/runs/<id>/abort       â†’ abort a running simulation
+
+Usage::
+
+    python controlpanel/server.py                       # default port 8090 (or XAQ_PORT env)
+    python controlpanel/server.py --port 9000            # custom port
+    python controlpanel/server.py --run-dir C:/other     # custom run folder
+"""
+
+import argparse
+import atexit
+import csv
+import datetime
+import glob
+import multiprocessing
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import uuid
+import xml.etree.ElementTree as ET
+from collections import OrderedDict
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+from typing import Optional
+from urllib.parse import urlparse, parse_qs, unquote_plus
+
+try:
+    import h5py  # type: ignore
+except Exception:  # pragma: no cover - optional runtime dependency
+    h5py = None
+
+try:
+    import geopandas as gpd  # type: ignore
+except Exception:  # pragma: no cover - optional runtime dependency
+    gpd = None
+
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover - optional runtime dependency
+    pd = None
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+CPANEL_DIR = os.path.abspath(os.path.dirname(__file__))
+DEFAULT_RUN_DIR = os.path.join(BASE_DIR, "run")
+OUTPUT_DIR = os.path.join(BASE_DIR, "parameterisation")
+SCENARIO_DIR = os.path.join(BASE_DIR, "scenario")
+TEMPLATE_PATH = os.path.join(OUTPUT_DIR, "template.xrun")
+START_BAT = os.path.join(BASE_DIR, "__start__.bat")
+ANALYSIS_SCRIPT = os.path.join(BASE_DIR, "analysis", "run_basic_analysis.py")
+ANALYSIS_OUTPUT_ROOT = os.path.join(BASE_DIR, "analysis_output")
+ANALYSIS_RUNTIME_DIR = os.path.join(BASE_DIR, "analysis", "python")
+_embedded_analysis_py = os.path.join(ANALYSIS_RUNTIME_DIR, "python.exe")
+ANALYSIS_MODE_DEFAULT = "local"
+ANALYSIS_MODE_ENV = "XAQ_ANALYSIS_MODE"
+ANALYSIS_SERVICE_URL_ENV = "XAQ_ANALYSIS_SERVICE_URL"
+ANALYSIS_REQUIRED_MODULES = [
+    "h5py",
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "openpyxl",
+    "geopandas",
+    "pyogrio",
+]
+PORT_ENV = "XAQ_PORT"
+PORT = int(os.environ.get(PORT_ENV, "8090"))
+DEFAULT_UI_PROFILE = "all"
+UI_PROFILE_ENV = "XAQ_UI_PROFILE"
+VALID_UI_PROFILES = {"all", "prep", "analysis"}
+PARAM_FILE_EXTENSIONS = (".xrun", ".yaml", ".yml")
+HYDRO_TIME_FORMAT = "%Y-%m-%dT%H:%M"
+HYDRO_ARRAY_DATASETS = ("flow", "depth", "volume", "area")
+
+# Load Step 2 pandas backend for CSV trimming (optional)
+step2_backend = None
+try:
+    import step2_pandas_backend as step2_backend  # type: ignore
+except Exception:
+    pass  # Step 2 backend is optional
+
+# Track running simulation processes: {experiment_id: subprocess.Popen}
+_running_processes = {}
+_running_started_at = {}
+_proc_lock = threading.Lock()
+
+# Track analysis jobs: {job_id: {"proc", "output_dir", "started_at", "log_path"}}
+_analysis_jobs = {}
+_analysis_lock = threading.Lock()
+
+# Track scenario subset jobs: {job_id: {running, completed, progress_pct, message, ...}}
+_subset_jobs = {}
+_subset_lock = threading.Lock()
+
+_map_geometry_cache = OrderedDict()
+_map_timeseries_cache = OrderedDict()
+_map_cache_lock = threading.Lock()
+_MAP_GEOMETRY_CACHE_LIMIT = 8
+_MAP_TIMESERIES_CACHE_LIMIT = 32
+_MAP_HOURLY_MAX_POINTS = 500000
+_INSTANCE_LOCK_PATH = os.path.join(CPANEL_DIR, "server.instance.lock")
+_INSTANCE_LOCK_HELD = False
+
+
+class SubsetJobCancelled(Exception):
+    """Raised when a running subset creation job is cancelled by the user."""
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    except SystemError:
+        # On Windows, os.kill(pid, 0) can raise SystemError wrapping
+        # WinError 87 (ERROR_INVALID_PARAMETER) for stale / system PIDs.
+        # Treat as "process not running" so stale lock files are cleaned up.
+        return False
+    return True
+
+
+def _read_instance_lock(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+            if isinstance(payload, dict):
+                return payload
+    except Exception:
+        return {}
+    return {}
+
+
+def _release_single_instance_lock():
+    global _INSTANCE_LOCK_HELD
+    if not _INSTANCE_LOCK_HELD:
+        return
+    try:
+        payload = _read_instance_lock(_INSTANCE_LOCK_PATH)
+        # Only remove lock file if we still own it.
+        if int(payload.get("pid", -1)) == os.getpid():
+            os.remove(_INSTANCE_LOCK_PATH)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    _INSTANCE_LOCK_HELD = False
+
+
+def _acquire_single_instance_lock(port: int):
+    global _INSTANCE_LOCK_HELD
+    payload = {
+        "pid": os.getpid(),
+        "port": int(port),
+        "started_at": int(time.time()),
+        "python": sys.executable,
+        "script": os.path.abspath(__file__),
+    }
+
+    for _ in range(2):
+        try:
+            fd = os.open(_INSTANCE_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+            _INSTANCE_LOCK_HELD = True
+            atexit.register(_release_single_instance_lock)
+            return
+        except FileExistsError:
+            existing = _read_instance_lock(_INSTANCE_LOCK_PATH)
+            existing_pid = int(existing.get("pid", -1))
+            existing_port = existing.get("port", "?")
+            if existing_pid > 0 and _pid_is_running(existing_pid):
+                raise RuntimeError(
+                    "Another controlpanel server is already running "
+                    f"(pid={existing_pid}, port={existing_port}). "
+                    "Stop that process first or use a different port."
+                )
+            # Stale lock file from a dead process; remove and retry once.
+            try:
+                os.remove(_INSTANCE_LOCK_PATH)
+            except FileNotFoundError:
+                pass
+
+    raise RuntimeError("Could not acquire single-instance lock for controlpanel server")
+
+
+def _get_server_status_info() -> dict:
+    """Return current server instance info for status endpoint."""
+    info = {
+        "status": "unknown",
+        "pid": None,
+        "port": None,
+        "started_at": None,
+        "uptime_seconds": None,
+        "alive": False,
+        "lock_file": _INSTANCE_LOCK_PATH,
+    }
+    
+    if not os.path.exists(_INSTANCE_LOCK_PATH):
+        info["status"] = "not_running"
+        return info
+    
+    try:
+        payload = _read_instance_lock(_INSTANCE_LOCK_PATH)
+        pid = int(payload.get("pid", -1))
+        started_at = int(payload.get("started_at", -1))
+        
+        info.update({
+            "pid": pid,
+            "port": payload.get("port"),
+            "started_at": started_at,
+        })
+        
+        if pid > 0 and started_at > 0:
+            info["alive"] = _pid_is_running(pid)
+            info["uptime_seconds"] = int(time.time()) - started_at
+            info["status"] = "running" if info["alive"] else "zombie"
+        else:
+            info["status"] = "invalid_lock"
+    except Exception as exc:
+        info["status"] = "error"
+        info["error"] = str(exc)
+    
+    return info
+
+
+def _cache_get(cache: OrderedDict, key):
+    with _map_cache_lock:
+        value = cache.get(key)
+        if value is not None:
+            cache.move_to_end(key)
+        return value
+
+
+def _cache_set(cache: OrderedDict, key, value, limit: int):
+    with _map_cache_lock:
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > limit:
+            cache.popitem(last=False)
+
+
+def _union_geometries(geometries):
+    if hasattr(geometries, "union_all"):
+        return geometries.union_all()
+    return geometries.unary_union
+
+
+def _embedded_json_call(script: str, payload: dict):
+    analysis_python = _pick_analysis_python()
+    if not analysis_python:
+        raise RuntimeError(
+            "Map explorer dependencies are unavailable in control panel runtime and embedded analysis runtime is missing"
+        )
+    cmd = [analysis_python, "-c", script, json.dumps(payload)]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=BASE_DIR,
+        env=_analysis_subprocess_env(),
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "unknown error").strip()
+        raise RuntimeError(f"Embedded runtime call failed: {detail}")
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Embedded runtime returned invalid JSON: {exc}") from exc
+
+
+def _analysis_subprocess_env() -> dict:
+    """Return the environment used for analysis subprocesses."""
+    env = os.environ.copy()
+    # Isolate analysis subprocesses from parent Python runtime path settings.
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
+
+
+def _resolve_analysis_mode() -> str:
+    raw = os.environ.get(ANALYSIS_MODE_ENV, ANALYSIS_MODE_DEFAULT).strip().lower()
+    if raw not in {"local", "remote"}:
+        return ANALYSIS_MODE_DEFAULT
+    return raw
+
+
+def _analysis_service_url() -> str:
+    return os.environ.get(ANALYSIS_SERVICE_URL_ENV, "").strip()
+
+
+def _normalize_ui_profile(raw: str) -> str:
+    profile = (raw or "").strip().lower()
+    if profile not in VALID_UI_PROFILES:
+        return DEFAULT_UI_PROFILE
+    return profile
+
+
+def get_ui_profile_config() -> dict:
+    return {
+        "profile": _normalize_ui_profile(getattr(ControlPanelHandler, "ui_profile", DEFAULT_UI_PROFILE)),
+        "default_profile": DEFAULT_UI_PROFILE,
+        "supported_profiles": sorted(VALID_UI_PROFILES),
+        "profile_env": UI_PROFILE_ENV,
+    }
+
+
+def get_analysis_runtime_config() -> dict:
+    mode = _resolve_analysis_mode()
+    service_url = _analysis_service_url()
+    return {
+        "mode": mode,
+        "service_url": service_url,
+        "service_configured": bool(service_url),
+        "mode_env": ANALYSIS_MODE_ENV,
+        "service_url_env": ANALYSIS_SERVICE_URL_ENV,
+        "supported_modes": ["local", "remote"],
+    }
+
+
+def _python_supports_modules(python_exe: str, modules: list[str]) -> bool:
+    if not python_exe or not os.path.isfile(python_exe):
+        return False
+    probe = [
+        python_exe,
+        "-c",
+        (
+            "import importlib.util, sys; "
+            f"mods={tuple(modules)!r}; "
+            "missing=[m for m in mods if importlib.util.find_spec(m) is None]; "
+            "sys.exit(1 if missing else 0)"
+        ),
+    ]
+    try:
+        result = subprocess.run(
+            probe,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=BASE_DIR,
+            env=_analysis_subprocess_env(),
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def _pick_analysis_python() -> Optional[str]:
+    """Resolve the preferred Python executable for analysis jobs."""
+    candidates = [_embedded_analysis_py]
+    if os.environ.get("XAQ_ALLOW_DEV_PYTHON", "").strip().lower() in {"1", "true", "yes"}:
+        candidates.extend(
+            [
+                os.path.join(BASE_DIR, ".venv", "Scripts", "python.exe"),
+                sys.executable,
+            ]
+        )
+    for candidate in candidates:
+        if _python_supports_modules(candidate, ["h5py", "pandas", "geopandas"]):
+            return candidate
+    return None
+
+
+def _analysis_runtime_error() -> Optional[str]:
+    """Return a user-facing analysis runtime error, if any."""
+    if not os.path.isfile(ANALYSIS_SCRIPT):
+        return f"Analysis script not found: {ANALYSIS_SCRIPT}"
+    analysis_python = _pick_analysis_python()
+    if not analysis_python:
+        return (
+            "Analysis runtime is missing. Expected embedded Python at "
+            f"{_embedded_analysis_py}. This copied working tree is incomplete for full controlpanel functionality. "
+            "Maintainers can rebuild the bundled analysis runtime with setup_analysis_python.bat."
+        )
+
+    probe = [
+        analysis_python,
+        "-c",
+        (
+            "import importlib.util; "
+            f"mods={tuple(ANALYSIS_REQUIRED_MODULES)!r}; "
+            "missing=[m for m in mods if importlib.util.find_spec(m) is None]; "
+            "print(','.join(missing))"
+        ),
+    ]
+    try:
+        result = subprocess.run(
+            probe,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=BASE_DIR,
+            env=_analysis_subprocess_env(),
+        )
+    except OSError as exc:
+        return f"Failed to verify analysis runtime: {exc}"
+
+    missing = (result.stdout or "").strip()
+    if result.returncode != 0:
+        detail = (result.stderr or missing or "unknown error").strip()
+        return f"Failed to verify analysis runtime: {detail}"
+    if missing:
+        return (
+            "Analysis runtime is incomplete: missing Python packages "
+            f"[{missing}]. This copied working tree is incomplete for full controlpanel functionality. "
+            "Maintainers can rebuild the bundled analysis runtime with setup_analysis_python.bat."
+        )
+    return None
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Analysis portable-runtime check
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+def check_analysis_portable():
+    """Check if analysis/python/python.exe exists and all required packages are importable."""
+    analysis_py = os.path.join(BASE_DIR, "analysis", "python", "python.exe")
+    result = {
+        "ready": False,
+        "missing_python": not os.path.isfile(analysis_py),
+        "missing_packages": [],
+        "details": ""
+    }
+    if result["missing_python"]:
+        result["details"] = "analysis/python/python.exe not found. Run setup_analysis_python.bat and bundle the folder."
+        return result
+    try:
+        code = (
+            "import importlib.util; mods = %r; "
+            "missing = [m for m in mods if not importlib.util.find_spec(m)]; "
+            "print(','.join(missing))"
+        ) % (ANALYSIS_REQUIRED_MODULES,)
+        proc = subprocess.run(
+            [analysis_py, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=BASE_DIR,
+            env=_analysis_subprocess_env(),
+        )
+        missing = proc.stdout.strip().split(",") if proc.returncode == 0 else ANALYSIS_REQUIRED_MODULES
+        missing = [m for m in missing if m]
+        result["missing_packages"] = missing
+        result["ready"] = (len(missing) == 0)
+        result["details"] = ("All required packages present." if result["ready"]
+                             else f"Missing packages: {', '.join(missing)}")
+    except Exception as e:
+        result["details"] = f"Error checking analysis/python: {e}"
+    return result
+
+
+def check_controlpanel_portable():
+    """Check if controlpanel runtime is bundled and currently in use."""
+    expected_python = os.path.abspath(os.path.join(BASE_DIR, "controlpanel", "python", "python.exe"))
+    current_python = os.path.abspath(sys.executable)
+    expected_exists = os.path.isfile(expected_python)
+    uses_bundled = expected_exists and os.path.normcase(current_python) == os.path.normcase(expected_python)
+
+    result = {
+        "ready": bool(expected_exists and uses_bundled),
+        "missing_python": not expected_exists,
+        "using_bundled_runtime": uses_bundled,
+        "expected_python": expected_python,
+        "current_python": current_python,
+        "details": "",
+    }
+
+    if not expected_exists:
+        result["details"] = "controlpanel/python/python.exe not found. Copied working tree is incomplete."
+    elif not uses_bundled:
+        result["details"] = (
+            "Controlpanel is not running from bundled runtime. "
+            "This is development mode and not xcopy deployment mode."
+        )
+    else:
+        result["details"] = "Controlpanel is running from bundled runtime."
+
+    return result
+
+
+def get_self_contained_runtime_status() -> dict:
+    """Return deployment status for bundled runtimes required by controlpanel."""
+    analysis = check_analysis_portable()
+    controlpanel = check_controlpanel_portable()
+    model_runtime = os.path.isfile(os.path.join(BASE_DIR, "model", "core", "bin", "python-3.9.7-amd64", "python.exe"))
+
+    warnings = []
+    if not controlpanel.get("ready"):
+        warnings.append(controlpanel.get("details") or "Controlpanel runtime is not ready.")
+    if not analysis.get("ready"):
+        warnings.append(analysis.get("details") or "Analysis runtime is not ready.")
+    if not model_runtime:
+        warnings.append("model/core/bin/python-3.9.7-amd64/python.exe not found. Simulation launch via __start__.bat may fail.")
+
+    return {
+        "status": "ready" if not warnings else "incomplete",
+        "warnings": warnings,
+        "controlpanel": controlpanel,
+        "analysis": analysis,
+        "analysis_runtime_config": get_analysis_runtime_config(),
+        "model_runtime_present": model_runtime,
+    }
+
+
+def get_analysis_python():
+    """Return bundled analysis Python interpreter path if available."""
+    return _pick_analysis_python()
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+def text_value(dataset):
+    if dataset is None:
+        return None
+    try:
+        raw = dataset[0]
+    except Exception:
+        return None
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        return raw.decode("ascii", errors="replace")
+    return str(raw)
+
+path = json.loads(sys.argv[1])["hydro_path"]
+with h5py.File(path, "r") as handle:
+    datasets = {}
+    for key in handle.keys():
+        obj = handle[key]
+        datasets[key] = {
+            "shape": list(getattr(obj, "shape", ())),
+            "dtype": str(getattr(obj, "dtype", "")),
+        }
+    result = {
+        "datasets": datasets,
+        "keys": list(handle.keys()),
+        "time_from": text_value(handle.get("time_from")),
+        "time_to": text_value(handle.get("time_to")),
+        "reach_count": int(handle["reaches"].shape[0]) if "reaches" in handle else 0,
+    }
+print(json.dumps(result))
+'''
+    return _embedded_json_call(script, {"hydro_path": hydro_path})
+
+
+def norm(v):
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    try:
+        return str(int(float(s)))
+    except (ValueError, OverflowError):
+        return s
+
+payload = json.loads(sys.argv[1])
+gdf = gpd.read_file(payload["shp_path"])
+topo = {}
+for _, row in gdf.iterrows():
+    k = norm(row.get("key"))
+    d = norm(row.get("downstream"))
+    if k is not None:
+        topo[k] = d if (d is not None and d.upper() != "OUTLET") else None
+print(json.dumps({"topo": topo}))
+'''
+        result = _embedded_json_call(script, {"shp_path": shp_path})
+        return result.get("topo", {})
+
+    try:
+        topo = _build_topology(shp_path)
+    except Exception:
+        return list(selected_reach_ids), []
+
+    # Walk downstream from every selected reach and collect all reached nodes
+    all_reach_keys = set(topo.keys())
+    selected_set = set(selected_reach_ids)
+    added = set()
+
+    for reach_id in list(selected_set):
+        current = topo.get(reach_id)
+        while current is not None and current not in selected_set and current not in added:
+            if current not in all_reach_keys:
+                break  # dangling reference â€“ stop walking
+            added.add(current)
+            current = topo.get(current)
+
+    expanded = list(selected_set | added)
+    return expanded, list(added)
+
+
+def norm(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"[-+]?\d+(?:\.0+)?", text):
+        return str(int(float(text)))
+    return text
+
+payload = json.loads(sys.argv[1])
+shp_path = payload["shp_path"]
+selected = set(payload["selected"])
+gdf = gpd.read_file(shp_path)
+if gdf.empty:
+    raise RuntimeError("Reach shapefile has no features")
+non_geom = [c for c in gdf.columns if c != "geometry"]
+if not non_geom:
+    raise RuntimeError("Reach shapefile has no attribute columns")
+preferred = ["key", "reach_id", "reachid", "segment_id", "reach", "name", "id"]
+best_col = non_geom[0]
+best_score = -1.0
+for col in non_geom:
+    vals = [norm(v) for v in gdf[col].dropna().head(2000)]
+    if not vals:
+        continue
+    unique_vals = set(v for v in vals if v is not None)
+    matched_unique = len(set(v for v in unique_vals if v in selected))
+    if matched_unique == 0:
+        continue
+    unique_ratio = len(unique_vals) / max(len(vals), 1)
+    score = float(matched_unique) + 0.5 * unique_ratio
+    lower_col = col.lower()
+    if lower_col in preferred:
+        score += 5.0
+    elif any(p in lower_col for p in preferred):
+        score += 2.0
+    if score > best_score:
+        best_score = score
+        best_col = col
+
+gdf["__reach_id__"] = gdf[best_col].map(norm)
+filtered = gdf[gdf["__reach_id__"].isin(selected)].copy()
+if filtered.empty:
+    raise RuntimeError("No selected reaches were found in reach shapefile")
+filtered = filtered.drop(columns=["__reach_id__"])
+base, _ = os.path.splitext(shp_path)
+for ext in (".shp", ".shx", ".dbf", ".prj", ".cpg", ".qix", ".fix"):
+    path = base + ext
+    if os.path.exists(path):
+        os.remove(path)
+filtered.to_file(shp_path)
+print(json.dumps({"status": "ok", "feature_count": int(len(filtered))}))
+'''
+    _embedded_json_call(script, {"shp_path": shp_path, "selected": list(selected)})
+
+
+def norm(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"[-+]?\d+(?:\.0+)?", text):
+        return str(int(float(text)))
+    return text
+
+payload = json.loads(sys.argv[1])
+hdf_path = payload["hdf_path"]
+shp_path = payload["shp_path"]
+
+with h5py.File(hdf_path, "r") as hf:
+    if "reaches" in hf:
+        hydro_ids = [norm(v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v) for v in hf["reaches"][:]]
+    else:
+        hydro_ids = []
+hydro_ids = [v for v in hydro_ids if v is not None]
+hydro_set = set(hydro_ids)
+
+gdf = gpd.read_file(shp_path)
+if gdf.empty:
+    print(json.dumps({
+        "ok": False,
+        "warnings": ["Reach shapefile has no features"],
+        "reach_id_column": None,
+        "hydro_reach_count": len(hydro_set),
+        "shape_feature_count": 0,
+        "shape_reach_id_count": 0,
+        "overlap_count": 0,
+        "missing_in_shapefile": hydro_ids[:20],
+        "missing_in_hydro": [],
+    }))
+    raise SystemExit(0)
+
+non_geom = [c for c in gdf.columns if c != "geometry"]
+preferred = ["key", "reach_id", "reachid", "segment_id", "reach", "name", "id"]
+lower_to_col = {c.lower(): c for c in non_geom}
+
+def sample(col_name):
+    vals = gdf[col_name].dropna().head(2000)
+    return [norm(v) for v in vals]
+
+best_col = None
+best_score = -1.0
+
+for low_name in preferred:
+    col = lower_to_col.get(low_name)
+    if not col:
+        continue
+    vals = sample(col)
+    if not vals:
+        continue
+    matched = len({v for v in vals if v in hydro_set})
+    if matched > best_score:
+        best_score = matched
+        best_col = col
+
+if best_col is None:
+    for col in non_geom:
+        vals = sample(col)
+        if not vals:
+            continue
+        unique_vals = {v for v in vals if v is not None}
+        matched = len({v for v in unique_vals if v in hydro_set})
+        if matched == 0:
+            continue
+        ratio = len(unique_vals) / max(len(vals), 1)
+        score = float(matched) + 0.5 * ratio
+        if score > best_score:
+            best_score = score
+            best_col = col
+
+if best_col is None and non_geom:
+    best_col = non_geom[0]
+
+shape_ids = []
+if best_col is not None:
+    shape_ids = [norm(v) for v in gdf[best_col].tolist()]
+shape_ids = [v for v in shape_ids if v is not None]
+shape_set = set(shape_ids)
+
+missing_in_shape = sorted(hydro_set - shape_set)
+missing_in_hydro = sorted(shape_set - hydro_set)
+overlap_count = len(hydro_set & shape_set)
+
+warnings = []
+if best_col is None:
+    warnings.append("Could not determine reach identifier column in reach shapefile")
+if missing_in_shape:
+    warnings.append(f"{len(missing_in_shape)} hydrology reaches are missing in reach shapefile")
+if missing_in_hydro:
+    warnings.append(f"{len(missing_in_hydro)} shapefile reaches are missing in hydrology HDF5")
+if overlap_count == 0:
+    warnings.append("No overlap between hydrology reaches and reach shapefile IDs")
+
+print(json.dumps({
+    "ok": len(warnings) == 0,
+    "warnings": warnings,
+    "reach_id_column": best_col,
+    "hydro_reach_count": len(hydro_set),
+    "shape_feature_count": int(len(gdf)),
+    "shape_reach_id_count": len(shape_set),
+    "overlap_count": overlap_count,
+    "missing_in_shapefile": missing_in_shape[:20],
+    "missing_in_hydro": missing_in_hydro[:20],
+}))
+'''
+
+    try:
+        result = _embedded_json_call(script, {"hdf_path": hdf_path, "shp_path": shp_path})
+    except Exception as exc:
+        warnings.append(f"Geometry contract validation failed: {exc}")
+        return {
+            "ok": False,
+            "warnings": warnings,
+            "hydro_path": hdf_path,
+            "reach_shapefile": shp_path,
+        }
+
+    result.setdefault("warnings", [])
+    result["hydro_path"] = hdf_path
+    result["reach_shapefile"] = shp_path
+    return result
+
+
+def build_scenario_geometry(scenario_path):
+    scenario_rel, scenario_abs = _resolve_scenario_path(scenario_path)
+    if not os.path.isdir(scenario_abs):
+        raise FileNotFoundError(f"Scenario folder not found: {scenario_rel}")
+
+    shp_path = _find_reach_shapefile(scenario_abs)
+    if not shp_path:
+        raise FileNotFoundError("No shapefile found for selected scenario")
+
+    reach_ids = _load_reach_ids_from_scenario_hydro(_scenario_hydro_path(scenario_abs))
+    reach_set = set(reach_ids)
+
+    if gpd is None:
+        script = r'''
+import glob
+import json
+import os
+import re
+import sys
+import geopandas as gpd
+
+def norm(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"[-+]?\d+(?:\.0+)?", text):
+        return str(int(float(text)))
+    return text
+
+payload = json.loads(sys.argv[1])
+shp_path = payload["shp_path"]
+reach_ids = set(payload["reach_ids"])
+gdf = gpd.read_file(shp_path)
+if gdf.empty:
+    raise RuntimeError("Shapefile has no features")
+source_crs = str(gdf.crs) if gdf.crs else ""
+if gdf.crs is not None:
+    try:
+        if not gdf.crs.is_geographic:
+            gdf = gdf.to_crs(epsg=4326)
+    except Exception:
+        pass
+non_geom = [c for c in gdf.columns if c != "geometry"]
+if not non_geom:
+    raise RuntimeError("No attribute columns available in shapefile")
+preferred = ["key", "reach_id", "reachid", "segment_id", "reach", "name", "id"]
+best_col = non_geom[0]
+best_score = -1.0
+for col in non_geom:
+    vals = [norm(v) for v in gdf[col].dropna().head(2000)]
+    if not vals:
+        continue
+    unique_vals = set(v for v in vals if v is not None)
+    matched_unique = len(set(v for v in unique_vals if v in reach_ids))
+    if matched_unique == 0:
+        continue
+    unique_ratio = len(unique_vals) / max(len(vals), 1)
+    score = float(matched_unique) + 0.5 * unique_ratio
+    col_l = col.lower()
+    if col_l in preferred:
+        score += 5.0
+    elif any(p in col_l for p in preferred):
+        score += 2.0
+    if score > best_score:
+        best_score = score
+        best_col = col
+gdf = gdf.dropna(subset=["geometry"])
+gdf["__reach_id__"] = gdf[best_col].map(norm)
+gdf = gdf.dropna(subset=["__reach_id__"])
+gdf = gdf[gdf["__reach_id__"].isin(reach_ids)]
+if gdf.empty:
+    raise RuntimeError("No stream features could be mapped to selected scenario reaches")
+minx, miny, maxx, maxy = gdf.total_bounds
+geojson = json.loads(gdf[["__reach_id__", "geometry"]].to_json())
+for f in geojson.get("features", []):
+    rid = f.get("properties", {}).get("__reach_id__")
+    f["properties"] = {"reach_id": rid}
+print(json.dumps({
+    "geojson": geojson,
+    "meta": {
+        "reach_id_field": best_col,
+        "feature_count": len(geojson.get("features", [])),
+        "bounds": [float(minx), float(miny), float(maxx), float(maxy)],
+        "shapefile": shp_path,
+        "source_crs": source_crs,
+        "map_crs": "EPSG:4326",
+    }
+}))
+'''
+        embedded = _embedded_json_call(script, {"shp_path": shp_path, "reach_ids": list(reach_set)})
+        return {
+            "scenario_path": scenario_rel,
+            "geojson": embedded["geojson"],
+            "meta": embedded["meta"],
+            "reach_count": len(reach_ids),
+        }
+
+    gdf = gpd.read_file(shp_path)
+    if gdf.empty:
+        raise ValueError("Shapefile has no features")
+    gdf, source_crs = _normalize_map_gdf(gdf)
+    reach_col = _select_reach_id_column(gdf, reach_set)
+    if reach_col is None:
+        raise ValueError("Could not determine reach identifier column")
+    gdf["__reach_id__"] = gdf[reach_col].map(_normalize_reach_id)
+    gdf = gdf.dropna(subset=["__reach_id__"])
+    gdf = gdf[gdf["__reach_id__"].isin(reach_set)]
+    if gdf.empty:
+        raise ValueError("No stream features could be mapped to selected scenario reaches")
+    minx, miny, maxx, maxy = gdf.total_bounds
+    geom_json = json.loads(gdf[["__reach_id__", "geometry"]].to_json())
+    for feature in geom_json.get("features", []):
+        rid = feature.get("properties", {}).get("__reach_id__")
+        feature["properties"] = {"reach_id": rid}
+    return {
+        "scenario_path": scenario_rel,
+        "geojson": geom_json,
+        "meta": {
+            "reach_id_field": reach_col,
+            "feature_count": len(geom_json.get("features", [])),
+            "bounds": [float(minx), float(miny), float(maxx), float(maxy)],
+            "shapefile": shp_path,
+            "source_crs": source_crs,
+            "map_crs": "EPSG:4326",
+        },
+        "reach_count": len(reach_ids),
+    }
+
+
+def _load_reach_ids_from_hdf(arr_path):
+    if h5py is None:
+        raise RuntimeError("h5py is not available in this Python runtime")
+    with h5py.File(arr_path, "r") as hf:
+        if "CascadeToxswa/ConLiqWatTgtAvg" not in hf:
+            raise KeyError("Dataset CascadeToxswa/ConLiqWatTgtAvg not found")
+        ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+        names_ref = ds.attrs.get("dim1_element_names")
+        if names_ref is None:
+            raise KeyError("dim1_element_names attribute missing")
+        try:
+            raw_ids = hf[names_ref][:]
+        except Exception:
+            names_path = _decode_text(names_ref)
+            if names_path not in hf:
+                raise KeyError(f"Reach names dataset not found: {names_path}")
+            raw_ids = hf[names_path][:]
+    return _coerce_list_of_reach_ids(_decode_text(v) for v in raw_ids)
+
+
+def _select_reach_id_column(gdf, reach_ids_hint):
+    non_geom = [c for c in gdf.columns if c != "geometry"]
+    if not non_geom:
+        return None
+
+    # Prefer canonical reach identifier columns first.
+    exact_priority = ["key", "reach_id", "reachid", "segment_id", "reach", "name", "id"]
+    lower_to_col = {c.lower(): c for c in non_geom}
+
+    hints = set(_coerce_list_of_reach_ids(reach_ids_hint or []))
+
+    def _normalized_sample(col_name: str):
+        vals = gdf[col_name].dropna().head(2000)
+        if vals.empty:
+            return []
+        return [_normalize_reach_id(v) for v in vals]
+
+    if hints:
+        # Try exact-priority columns first if they overlap with hinted reach IDs.
+        priority_best = None
+        priority_matches = -1
+        for low_name in exact_priority:
+            col = lower_to_col.get(low_name)
+            if not col:
+                continue
+            norm_vals = _normalized_sample(col)
+            if not norm_vals:
+                continue
+            matched_unique = len({v for v in norm_vals if v in hints})
+            if matched_unique > priority_matches:
+                priority_matches = matched_unique
+                priority_best = col
+        if priority_best and priority_matches > 0:
+            return priority_best
+
+        # Fallback: score by unique-id overlap and penalize low-cardinality columns.
+        best_col = None
+        best_score = -1.0
+        preferred_tokens = ["reach_id", "reachid", "key", "segment_id", "reach", "name", "id"]
+        for col in non_geom:
+            norm_vals = _normalized_sample(col)
+            if not norm_vals:
+                continue
+            unique_vals = {v for v in norm_vals if v is not None}
+            matched_unique = len({v for v in unique_vals if v in hints})
+            if matched_unique == 0:
+                continue
+            unique_ratio = (len(unique_vals) / max(len(norm_vals), 1))
+            score = float(matched_unique) + 0.5 * unique_ratio
+            col_name = col.lower()
+            if col_name in preferred_tokens:
+                score += 5.0
+            elif any(tok in col_name for tok in preferred_tokens):
+                score += 2.0
+            if score > best_score:
+                best_score = score
+                best_col = col
+        if best_col:
+            return best_col
+
+    # Without hints, pick best-known column name if available.
+    for low_name in exact_priority:
+        col = lower_to_col.get(low_name)
+        if col:
+            return col
+
+    return non_geom[0]
+
+
+def _build_map_geometry_embedded(arr_path, scenario_path):
+    script = r'''
+import glob
+import json
+import os
+import re
+import sys
+import geopandas as gpd
+import h5py
+
+def norm(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"[-+]?\d+(?:\.0+)?", text):
+        return str(int(float(text)))
+    return text
+
+def find_shp(scenario_path):
+    for name in ("Reachlist_shp.shp", "ReachList_shp.shp"):
+        preferred = os.path.join(scenario_path, "geo", name)
+        if os.path.isfile(preferred):
+            return preferred
+    geo_dir = os.path.join(scenario_path, "geo")
+    if os.path.isdir(geo_dir):
+        files = sorted(glob.glob(os.path.join(geo_dir, "*.shp")))
+        if files:
+            return files[0]
+    files = sorted(glob.glob(os.path.join(scenario_path, "**", "*.shp"), recursive=True))
+    return files[0] if files else None
+
+def find_lulc_shp(scenario_path):
+    for name in ("LULC.shp", "lulc.shp"):
+        preferred = os.path.join(scenario_path, "geo", name)
+        if os.path.isfile(preferred):
+            return preferred
+    return None
+
+payload = json.loads(sys.argv[1])
+arr_path = payload["arr_path"]
+scenario_path = payload["scenario_path"]
+shp_path = find_shp(scenario_path)
+lulc_path = find_lulc_shp(scenario_path)
+if not shp_path:
+    raise RuntimeError("No shapefile found for selected scenario")
+
+with h5py.File(arr_path, "r") as hf:
+    ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+    names_ref = ds.attrs["dim1_element_names"]
+    try:
+        raw_ids = hf[names_ref][:]
+    except Exception:
+        names_path = names_ref.decode("utf-8", errors="replace") if isinstance(names_ref, bytes) else str(names_ref)
+        raw_ids = hf[names_path][:]
+    reach_ids = {norm(v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v) for v in raw_ids}
+
+gdf = gpd.read_file(shp_path)
+if gdf.empty:
+    raise RuntimeError("Shapefile has no features")
+source_crs = str(gdf.crs) if gdf.crs else ""
+if gdf.crs is not None:
+    try:
+        if not gdf.crs.is_geographic:
+            gdf = gdf.to_crs(epsg=4326)
+    except Exception:
+        pass
+
+non_geom = [c for c in gdf.columns if c != "geometry"]
+if not non_geom:
+    raise RuntimeError("No attribute columns available in shapefile")
+
+preferred = ["key", "reach_id", "reachid", "segment_id", "reach", "name", "id"]
+best_col = non_geom[0]
+best_score = -1.0
+for col in non_geom:
+    vals = [norm(v) for v in gdf[col].dropna().head(2000)]
+    if not vals:
+        continue
+    unique_vals = set(v for v in vals if v is not None)
+    matched_unique = len(set(v for v in unique_vals if v in reach_ids))
+    if matched_unique == 0:
+        continue
+    unique_ratio = len(unique_vals) / max(len(vals), 1)
+    score = float(matched_unique) + 0.5 * unique_ratio
+    col_l = col.lower()
+    if col_l in preferred:
+        score += 5.0
+    elif any(p in col_l for p in preferred):
+        score += 2.0
+    if score > best_score:
+        best_score = score
+        best_col = col
+
+gdf = gdf.dropna(subset=["geometry"]) 
+gdf["__reach_id__"] = gdf[best_col].map(norm)
+gdf = gdf.dropna(subset=["__reach_id__"])
+gdf = gdf[gdf["__reach_id__"].isin(reach_ids)]
+if gdf.empty:
+    raise RuntimeError("No stream features could be mapped to PECsw reach IDs")
+
+minx, miny, maxx, maxy = gdf.total_bounds
+geojson = json.loads(gdf[["__reach_id__", "geometry"]].to_json())
+for f in geojson.get("features", []):
+    rid = f.get("properties", {}).get("__reach_id__")
+    f["properties"] = {"reach_id": rid}
+
+lulc_geojson = {"type": "FeatureCollection", "features": []}
+lulc_meta = {
+    "feature_count": 0,
+    "shapefile": lulc_path,
+    "source_crs": "",
+    "map_crs": "EPSG:4326",
+}
+if lulc_path:
+    lulc_gdf = gpd.read_file(lulc_path)
+    if not lulc_gdf.empty:
+        lulc_source_crs = str(lulc_gdf.crs) if lulc_gdf.crs else ""
+        if lulc_gdf.crs is not None:
+            try:
+                if not lulc_gdf.crs.is_geographic:
+                    lulc_gdf = lulc_gdf.to_crs(epsg=4326)
+            except Exception:
+                pass
+        lulc_gdf = lulc_gdf.dropna(subset=["geometry"])
+        lulc_geojson = json.loads(lulc_gdf[["geometry"]].to_json())
+        for f in lulc_geojson.get("features", []):
+            f["properties"] = {}
+        lulc_meta = {
+            "feature_count": len(lulc_geojson.get("features", [])),
+            "shapefile": lulc_path,
+            "source_crs": lulc_source_crs,
+            "map_crs": "EPSG:4326",
+        }
+
+print(json.dumps({
+    "geojson": geojson,
+    "lulc_geojson": lulc_geojson,
+    "meta": {
+        "reach_id_field": best_col,
+        "feature_count": len(geojson.get("features", [])),
+        "bounds": [float(minx), float(miny), float(maxx), float(maxy)],
+        "shapefile": shp_path,
+        "source_crs": source_crs,
+        "map_crs": "EPSG:4326",
+    },
+    "lulc_meta": lulc_meta,
+}))
+'''
+    return _embedded_json_call(script, {"arr_path": arr_path, "scenario_path": scenario_path})
+
+
+def _build_map_timeseries_embedded(arr_path, reach_ids, time_from=None, time_to=None, resolution="auto"):
+    script = r'''
+import json
+import re
+import sys
+import h5py
+import pandas as pd
+
+def norm(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.fullmatch(r"[-+]?\d+(?:\.0+)?", text):
+        return str(int(float(text)))
+    return text
+
+payload = json.loads(sys.argv[1])
+arr_path = payload["arr_path"]
+requested = [norm(v) for v in payload.get("reach_ids", []) if norm(v)]
+requested = list(dict.fromkeys(requested))
+time_from = payload.get("time_from")
+time_to = payload.get("time_to")
+resolution = (payload.get("resolution") or "auto").lower()
+
+with h5py.File(arr_path, "r") as hf:
+    ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+    names_ref = ds.attrs["dim1_element_names"]
+    try:
+        raw_ids = hf[names_ref][:]
+    except Exception:
+        names_path = names_ref.decode("utf-8", errors="replace") if isinstance(names_ref, bytes) else str(names_ref)
+        raw_ids = hf[names_path][:]
+    all_ids = [norm(v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v) for v in raw_ids]
+    idx = {rid: i for i, rid in enumerate(all_ids) if rid}
+
+    present = [rid for rid in requested if rid in idx]
+    missing = [rid for rid in requested if rid not in idx]
+    if not present:
+        raise RuntimeError("None of the requested reach IDs exist in PECsw data")
+
+    start_raw = ds.attrs.get("dim0_offset")
+    start_text = start_raw.decode("utf-8", errors="replace") if isinstance(start_raw, bytes) else str(start_raw)
+    start_dt = pd.to_datetime(start_text, errors="coerce")
+    if pd.isna(start_dt):
+        start_dt = pd.Timestamp("1970-01-01T00:00:00")
+    full_index = pd.date_range(start=start_dt, periods=ds.shape[0], freq="h")
+
+    from_dt = pd.to_datetime(time_from, errors="coerce") if time_from else full_index[0]
+    to_dt = pd.to_datetime(time_to, errors="coerce") if time_to else full_index[-1]
+    if pd.isna(from_dt):
+        from_dt = full_index[0]
+    if pd.isna(to_dt):
+        to_dt = full_index[-1]
+    if to_dt < from_dt:
+        raise RuntimeError("time_to must be greater than or equal to time_from")
+
+    i0 = max(0, int(full_index.searchsorted(from_dt, side="left")))
+    i1 = min(len(full_index)-1, int(full_index.searchsorted(to_dt, side="right") - 1))
+    if i1 < i0:
+        raise RuntimeError("Selected time window does not overlap with available data")
+
+    part_index = full_index[i0:i1+1]
+    if resolution not in ("auto", "daily", "hourly"):
+        resolution = "auto"
+    if resolution == "auto":
+        resolution = "hourly" if len(part_index) <= 24 * 14 else "daily"
+    
+    # Auto-downgrade hourly to daily if payload would be too large (500k points)
+    if resolution == "hourly" and len(part_index) * len(present) > 500000:
+        resolution = "daily"
+
+    # h5py requires indices in increasing order; create mapping to restore original order
+    cols = [idx[rid] for rid in present]
+    sorted_cols_enum = sorted(enumerate(cols), key=lambda x: x[1])
+    sorted_cols = [x[1] for x in sorted_cols_enum]
+    sort_order = [x[0] for x in sorted_cols_enum]
+    
+    arr = ds[i0:i1+1, sorted_cols] * 1_000_000.0
+    # Reorder columns back to match original present order
+    arr = arr[:, [sort_order.index(i) for i in range(len(sort_order))]]
+
+frame = pd.DataFrame(arr, index=part_index, columns=present)
+if resolution == "daily":
+    frame = frame.resample("D").max()
+
+times = [t.isoformat() for t in frame.index.to_pydatetime()]
+series = [{"reach_id": rid, "values": frame[rid].astype(float).round(6).tolist()} for rid in present]
+
+print(json.dumps({
+    "times": times,
+    "series": series,
+    "meta": {
+        "units": "ng/L",
+        "resolution_used": resolution,
+        "requested_resolution": (payload.get("resolution") or "auto").lower(),
+        "time_from": times[0] if times else None,
+        "time_to": times[-1] if times else None,
+        "requested_reach_count": len(requested),
+        "returned_reach_count": len(present),
+        "missing_reaches": missing,
+        "available_time_start": full_index[0].isoformat(),
+        "available_time_end": full_index[-1].isoformat(),
+    },
+}))
+'''
+    return _embedded_json_call(
+        script,
+        {
+            "arr_path": arr_path,
+            "reach_ids": reach_ids,
+            "time_from": time_from,
+            "time_to": time_to,
+            "resolution": resolution,
+        },
+    )
+
+
+def _build_map_geometry(arr_path, scenario_path):
+    if gpd is None or h5py is None:
+        return _build_map_geometry_embedded(arr_path, scenario_path)
+
+    shp_path = _find_reach_shapefile(scenario_path)
+    lulc_path = _find_lulc_shapefile(scenario_path)
+    if not shp_path:
+        raise FileNotFoundError("No shapefile found for selected scenario")
+
+    cache_key = hashlib.sha1(f"{arr_path}|{shp_path}|{lulc_path or ''}".encode("utf-8")).hexdigest()
+    cached = _cache_get(_map_geometry_cache, cache_key)
+    if cached is not None:
+        return cached
+
+    reach_ids = _load_reach_ids_from_hdf(arr_path)
+    gdf = gpd.read_file(shp_path)
+    if gdf.empty:
+        raise ValueError("Shapefile has no features")
+    gdf, source_crs = _normalize_map_gdf(gdf)
+    reach_col = _select_reach_id_column(gdf, set(reach_ids))
+    if reach_col is None:
+        raise ValueError("Could not determine reach identifier column")
+
+    gdf["__reach_id__"] = gdf[reach_col].map(_normalize_reach_id)
+    gdf = gdf.dropna(subset=["__reach_id__"])
+    gdf = gdf[gdf["__reach_id__"].isin(set(reach_ids))]
+    if gdf.empty:
+        raise ValueError("No stream features could be mapped to PECsw reach IDs")
+
+    minx, miny, maxx, maxy = gdf.total_bounds
+    geom_json = json.loads(gdf[["__reach_id__", "geometry"]].to_json())
+    for feature in geom_json.get("features", []):
+        rid = feature.get("properties", {}).get("__reach_id__")
+        feature["properties"] = {"reach_id": rid}
+
+    lulc_payload = _build_lulc_geojson(lulc_path)
+
+    payload = {
+        "geojson": geom_json,
+        "lulc_geojson": lulc_payload["geojson"],
+        "meta": {
+            "reach_id_field": reach_col,
+            "feature_count": len(geom_json.get("features", [])),
+            "bounds": [float(minx), float(miny), float(maxx), float(maxy)],
+            "shapefile": shp_path,
+            "source_crs": source_crs,
+            "map_crs": "EPSG:4326",
+        },
+        "lulc_meta": lulc_payload["meta"],
+    }
+    _cache_set(_map_geometry_cache, cache_key, payload, _MAP_GEOMETRY_CACHE_LIMIT)
+    return payload
+
+
+def _resolve_resolution(requested, dt_index):
+    requested = (requested or "auto").lower()
+    if requested in ("hour", "hr"):
+        requested = "hourly"
+    if requested not in ("auto", "daily", "hourly"):
+        requested = "auto"
+    if requested == "auto":
+        if len(dt_index) <= 24 * 14:
+            return "hourly"
+        return "daily"
+    return requested
+
+
+def _build_map_timeseries(arr_path, reach_ids, time_from=None, time_to=None, resolution="auto"):
+    if h5py is None or pd is None:
+        return _build_map_timeseries_embedded(
+            arr_path,
+            reach_ids,
+            time_from=time_from,
+            time_to=time_to,
+            resolution=resolution,
+        )
+    if not reach_ids:
+        raise ValueError("At least one reach_id is required")
+
+    norm_reach_ids = _coerce_list_of_reach_ids(reach_ids)
+    cache_key = hashlib.sha1(json.dumps({
+        "arr": arr_path,
+        "ids": norm_reach_ids,
+        "from": time_from or "",
+        "to": time_to or "",
+        "res": resolution or "auto",
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+    cached = _cache_get(_map_timeseries_cache, cache_key)
+    if cached is not None:
+        return cached
+
+    with h5py.File(arr_path, "r") as hf:
+        if "CascadeToxswa/ConLiqWatTgtAvg" not in hf:
+            raise KeyError("Dataset CascadeToxswa/ConLiqWatTgtAvg not found")
+        ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+        names_ref = ds.attrs.get("dim1_element_names")
+        try:
+            raw_ids = hf[names_ref][:]
+        except Exception:
+            names_path = _decode_text(names_ref)
+            raw_ids = hf[names_path][:]
+        all_reach_ids = _coerce_list_of_reach_ids(_decode_text(v) for v in raw_ids)
+        idx_by_reach = {rid: idx for idx, rid in enumerate(all_reach_ids)}
+
+        requested_present = [rid for rid in norm_reach_ids if rid in idx_by_reach]
+        missing = [rid for rid in norm_reach_ids if rid not in idx_by_reach]
+        if not requested_present:
+            raise ValueError("None of the requested reach IDs exist in PECsw data")
+
+        start_raw = ds.attrs.get("dim0_offset")
+        start_dt = pd.to_datetime(_decode_text(start_raw), errors="coerce")
+        if pd.isna(start_dt):
+            start_dt = pd.Timestamp("1970-01-01T00:00:00")
+
+        full_index = pd.date_range(start=start_dt, periods=ds.shape[0], freq="h")
+        from_dt = pd.to_datetime(time_from, errors="coerce") if time_from else full_index[0]
+        to_dt = pd.to_datetime(time_to, errors="coerce") if time_to else full_index[-1]
+        if pd.isna(from_dt):
+            from_dt = full_index[0]
+        if pd.isna(to_dt):
+            to_dt = full_index[-1]
+        if to_dt < from_dt:
+            raise ValueError("time_to must be greater than or equal to time_from")
+
+        i0 = max(0, int(full_index.searchsorted(from_dt, side="left")))
+        i1 = min(len(full_index) - 1, int(full_index.searchsorted(to_dt, side="right") - 1))
+        if i1 < i0:
+            raise ValueError("Selected time window does not overlap with available data")
+
+        sel_index = full_index[i0:i1 + 1]
+        resolution_used = _resolve_resolution(resolution, sel_index)
+
+        # Auto-downgrade hourly to daily if payload would be too large
+        if resolution_used == "hourly" and len(sel_index) * len(requested_present) > _MAP_HOURLY_MAX_POINTS:
+            resolution_used = "daily"
+
+        # h5py requires indices in increasing order; create mapping to restore original order
+        col_indices = [idx_by_reach[rid] for rid in requested_present]
+        sorted_indices = sorted(enumerate(col_indices), key=lambda x: x[1])
+        sorted_col_indices = [x[1] for x in sorted_indices]
+        sort_order = [x[0] for x in sorted_indices]
+        
+        arr = ds[i0:i1 + 1, sorted_col_indices] * 1_000_000.0
+        # Reorder columns back to match requested_present order
+        arr = arr[:, [sort_order.index(i) for i in range(len(sort_order))]]
+
+    frame = pd.DataFrame(arr, index=sel_index, columns=requested_present)
+    if resolution_used == "daily":
+        frame = frame.resample("D").max()
+
+    times = [t.isoformat() for t in frame.index.to_pydatetime()]
+    series = [{"reach_id": rid, "values": frame[rid].astype(float).round(6).tolist()} for rid in requested_present]
+    payload = {
+        "times": times,
+        "series": series,
+        "meta": {
+            "units": "ng/L",
+            "resolution_used": resolution_used,
+            "requested_resolution": (resolution or "auto").lower(),
+            "time_from": times[0] if times else None,
+            "time_to": times[-1] if times else None,
+            "requested_reach_count": len(norm_reach_ids),
+            "returned_reach_count": len(requested_present),
+            "missing_reaches": missing,
+            "available_time_start": full_index[0].isoformat(),
+            "available_time_end": full_index[-1].isoformat(),
+        },
+    }
+    _cache_set(_map_timeseries_cache, cache_key, payload, _MAP_TIMESERIES_CACHE_LIMIT)
+    return payload
+
+
+def list_map_explorer_runs(run_root):
+    """Return runs that have scenario geometry and arr.dat store for map explorer."""
+    candidates = list_runs_with_mcs(run_root)
+    items = []
+    for entry in candidates:
+        experiment = entry["experiment"]
+        run_path = os.path.join(run_root, experiment)
+        params = _parse_user_xml(run_path)
+        scenario_rel_raw = (entry.get("landscape_scenario") or "").strip()
+        try:
+            scenario_rel, scenario_path = _resolve_run_metadata_scenario_path(scenario_rel_raw, run_path)
+        except (FileNotFoundError, ValueError):
+            scenario_rel, scenario_path = scenario_rel_raw, ""
+        shapefile = _find_reach_shapefile(scenario_path) if scenario_path and os.path.isdir(scenario_path) else None
+        valid_mcs = [mc for mc in entry.get("mcs", []) if mc.get("has_store")]
+        if not valid_mcs:
+            continue
+        items.append({
+            "experiment": experiment,
+            "scenario_path": scenario_rel,
+            "scenario_name": os.path.basename(scenario_path) if scenario_path else "unknown",
+            "geometry_available": bool(shapefile),
+            "simulation_start": (params.get("Scenario/SimulationStart") or "").strip(),
+            "simulation_end": (params.get("Scenario/SimulationEnd") or "").strip(),
+            "mcs": valid_mcs,
+        })
+    return items
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Analysis helpers
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+ANALYSIS_EXPOSURE_MODEL_DATASETS = {
+    "CascadeToxswa": {
+        "pecsw": "CascadeToxswa/ConLiqWatTgtAvg",
+        "pecsed": "CascadeToxswa/CntSedTgt1",
+    },
+    "StepsRiverNetwork": {
+        "pecsw": "StepsRiverNetwork/PEC_SW",
+        "pecsed": "StepsRiverNetwork/PEC_SED",
+    },
+}
+
+
+def get_analysis_exposure_models(run_root: str, experiment: str, mc_run: str) -> dict:
+    """Inspect arr.dat and report which exposure models have usable exposure datasets."""
+    if not experiment or not mc_run:
+        return {"available_models": [], "details": {}, "message": "experiment and mc_run are required"}
+    for val, name in ((experiment, "experiment"), (mc_run, "mc_run")):
+        if any(c in val for c in (os.sep, "/", "\\", "..")):
+            raise ValueError(f"Invalid {name}")
+
+    arr_path = os.path.abspath(os.path.join(run_root, experiment, "mcs", mc_run, "store", "arr.dat"))
+    if not os.path.isfile(arr_path):
+        return {
+            "available_models": [],
+            "details": {},
+            "arr_path": arr_path,
+            "message": f"arr.dat not found: {arr_path}",
+        }
+
+    script = r'''
+import json
+import sys
+import h5py
+
+payload = json.loads(sys.argv[1])
+arr_path = payload["arr_path"]
+datasets = payload["datasets"]
+details = {}
+available = []
+
+with h5py.File(arr_path, "r") as f:
+    for model, keys in datasets.items():
+        pecsw_key = keys["pecsw"]
+        pecsed_key = keys["pecsed"]
+        has_pecsw = pecsw_key in f
+        has_pecsed = pecsed_key in f
+        details[model] = {
+            "pecsw": has_pecsw,
+            "pecsed": has_pecsed,
+        }
+        if has_pecsw and has_pecsed:
+            available.append(model)
+
+print(json.dumps({
+    "available_models": available,
+    "details": details,
+    "arr_path": arr_path,
+}))
+'''
+    return _embedded_json_call(
+        script,
+        {"arr_path": arr_path, "datasets": ANALYSIS_EXPOSURE_MODEL_DATASETS},
+    )
+
+def list_runs_with_mcs(run_root):
+    """Return analysis runs with MC and scenario metadata, sorted newest first."""
+    result = []
+    if not os.path.isdir(run_root):
+        return result
+    for entry in sorted(os.listdir(run_root), reverse=True):
+        run_path = os.path.join(run_root, entry)
+        if not os.path.isdir(run_path):
+            continue
+        params = _parse_user_xml(run_path)
+        landscape_scenario = (
+            params.get("Scenario/LandscapeScenario")
+            or params.get("Scenario/Project")
+            or ""
+        ).strip()
+        mcs_path = os.path.join(run_path, "mcs")
+        mcs = []
+        if os.path.isdir(mcs_path):
+            for mc in sorted(os.listdir(mcs_path)):
+                mc_path = os.path.join(mcs_path, mc)
+                if os.path.isdir(mc_path):
+                    has_store = os.path.isfile(
+                        os.path.join(mc_path, "store", "arr.dat"))
+                    mcs.append({"id": mc, "has_store": has_store})
+        if mcs:
+            result.append({
+                "experiment": entry,
+                "mcs": mcs,
+                "landscape_scenario": landscape_scenario,
+            })
+    return result
+
+
+def analysis_job_status(job_id):
+    """Return status dict for an analysis job."""
+    with _analysis_lock:
+        job = _analysis_jobs.get(job_id)
+    if job is None:
+        return {"error": "Job not found"}
+    proc = job["proc"]
+    running   = proc.poll() is None
+    exit_code = proc.poll()
+    log_lines = []
+    if os.path.isfile(job["log_path"]):
+        try:
+            with open(job["log_path"], "r", encoding="utf-8", errors="replace") as fh:
+                log_lines = [l.rstrip() for l in fh.readlines()[-300:]]
+        except OSError:
+            pass
+    return {
+        "job_id":      job_id,
+        "running":     running,
+        "exit_code":   exit_code,
+        "output_dir":  job["output_dir"],
+        "started_at":  job["started_at"],
+        "log_lines":   log_lines,
+    }
+
+
+def analysis_job_outputs(job_id):
+    """List output files produced by an analysis job."""
+    with _analysis_lock:
+        job = _analysis_jobs.get(job_id)
+    if job is None:
+        return {"error": "Job not found"}
+    output_dir = job["output_dir"]
+    files = []
+    if os.path.isdir(output_dir):
+        for fn in sorted(os.listdir(output_dir)):
+            fp = os.path.join(output_dir, fn)
+            if not os.path.isfile(fp) or fn == "analysis.log":
+                continue
+            ext = os.path.splitext(fn)[1].lower()
+            if ext == ".json":          # internal data files â€“ not shown as chips
+                continue
+            ftype = ("image"  if ext in (".png", ".jpg", ".svg") else
+                     "excel"  if ext == ".xlsx"                    else
+                     "other")
+            files.append({"name": fn, "size": os.path.getsize(fp), "type": ftype})
+    return {"files": files, "output_dir": output_dir}
+
+
+def discover_runs(run_root):
+    """Return list of run summaries, most-recent first."""
+    # Clean up finished/dead processes from tracking dict
+    with _proc_lock:
+        for rid in list(_running_processes):
+            p = _running_processes[rid]
+            if p.poll() is not None:          # process has exited
+                del _running_processes[rid]
+                _running_started_at.pop(rid, None)
+
+    runs = []
+    if not os.path.isdir(run_root):
+        return runs
+    for entry in os.listdir(run_root):
+        run_path = os.path.join(run_root, entry)
+        if not os.path.isdir(run_path):
+            continue
+        log_dir = os.path.join(run_path, "log")
+        exp_log = os.path.join(log_dir, "experiment.log")
+
+        status, elapsed, mc_total, mc_mode = "unknown", "", 0, ""
+        if os.path.isfile(exp_log):
+            exp_entries = _parse_log_lines(exp_log)
+            for e in exp_entries:
+                if "Experiment started" in e["msg"]:
+                    status = "running"
+                if "Experiment finished" in e["msg"]:
+                    status = "finished"
+                m = re.search(r"(Serial|Parallel) mode.*?(\d+) MC", e["msg"])
+                if m:
+                    mc_mode, mc_total = m.group(1), int(m.group(2))
+                if e["msg"].startswith("Elapsed time:"):
+                    elapsed = e["msg"][len("Elapsed time:"):].strip()
+            for e in exp_entries:
+                if "completed with errors" in e["msg"]:
+                    status = "error"
+                elif "completed with warnings" in e["msg"] and status != "error":
+                    status = "warning"
+        else:
+            status = "initializing"
+
+        mc_logs = glob.glob(os.path.join(log_dir, "mc_*.log"))
+        mc_finished = 0
+        for ml in mc_logs:
+            for e in _parse_log_lines(ml, tail=20):
+                if "MC run finished" in e["msg"]:
+                    mc_finished += 1
+                    break
+
+        try:
+            mtime = datetime.datetime.fromtimestamp(
+                os.path.getmtime(run_path)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        except OSError:
+            mtime = ""
+
+        runs.append({
+            "id": entry,
+            "status": status,
+            "elapsed": elapsed,
+            "mc_total": mc_total,
+            "mc_running": len(mc_logs),
+            "mc_finished": mc_finished,
+            "mc_mode": mc_mode,
+            "modified": mtime,
+            "abortable": entry in _running_processes,
+        })
+
+        if not elapsed and status in ("running", "initializing"):
+            with _proc_lock:
+                started = _running_started_at.get(entry)
+            if started is not None:
+                runs[-1]["elapsed"] = _format_elapsed_from_seconds(time.time() - started)
+
+    runs.sort(key=lambda r: r["modified"], reverse=True)
+    return runs
+
+
+def run_detail(run_root, run_id):
+    """Detailed info for a single run."""
+    run_path = os.path.join(run_root, run_id)
+    if not os.path.isdir(run_path):
+        return None
+    log_dir = os.path.join(run_path, "log")
+    exp_log = os.path.join(log_dir, "experiment.log")
+    exp_entries = _parse_log_lines(exp_log) if os.path.isfile(exp_log) else []
+    exp_sev = _severity_counts(exp_entries)
+    params = _parse_user_xml(run_path)
+
+    mc_logs = sorted(glob.glob(os.path.join(log_dir, "mc_*.log")))
+    mc_runs = []
+    for ml in mc_logs:
+        mc_name = os.path.splitext(os.path.basename(ml))[0].replace("mc_", "")
+        entries = _parse_log_lines(ml)
+        sev = _severity_counts(entries)
+        initialized, done, current = _extract_mc_progress(entries)
+        has_finished = any("MC run finished" in e["msg"] for e in entries)
+        has_error_completion = any("MC run completed with errors" in e["msg"] for e in entries)
+        has_warning_completion = any("MC run completed with warnings" in e["msg"] for e in entries)
+
+        if has_error_completion:
+            mc_status = "error"
+        elif has_warning_completion:
+            mc_status = "warning"
+        elif has_finished:
+            mc_status = "finished"
+        else:
+            mc_status = "running"
+
+        mc_elapsed = ""
+        if mc_status in ("finished", "error", "warning"):
+            for e in reversed(entries):
+                if e["msg"].startswith("Elapsed time:"):
+                    mc_elapsed = e["msg"][len("Elapsed time:"):].strip()
+                    break
+
+        total = len(initialized) if initialized else 1
+        progress = round(len(done) / total, 4)
+        if mc_status in ("finished", "warning", "error"):
+            progress = 1.0
+        mc_runs.append({
+            "name": mc_name,
+            "status": mc_status,
+            "elapsed": mc_elapsed,
+            "initialized": initialized,
+            "components_done": done,
+            "current_component": current,
+            "progress": progress,
+            "severity_counts": sev,
+        })
+
+    status, elapsed = "unknown", ""
+    for e in exp_entries:
+        if "Experiment started" in e["msg"]:
+            status = "running"
+        if "Experiment finished" in e["msg"]:
+            status = "finished"
+        if "completed with errors" in e["msg"]:
+            status = "error"
+        elif "completed with warnings" in e["msg"] and status != "error":
+            status = "warning"
+        if e["msg"].startswith("Elapsed time:"):
+            elapsed = e["msg"][len("Elapsed time:"):].strip()
+
+    if not elapsed and status in ("running", "initializing"):
+        with _proc_lock:
+            started = _running_started_at.get(run_id)
+        if started is not None:
+            elapsed = _format_elapsed_from_seconds(time.time() - started)
+
+    return {
+        "id": run_id,
+        "status": status,
+        "elapsed": elapsed,
+        "severity_counts": exp_sev,
+        "parameters": params,
+        "mc_runs": mc_runs,
+        "abortable": run_id in _running_processes,
+    }
+
+
+def tail_log(run_root, run_id, log_name, tail_lines=200):
+    """Return the last *tail_lines* parsed entries of a log file."""
+    log_name = os.path.basename(log_name)
+    log_path = os.path.join(run_root, run_id, "log", log_name)
+    if not os.path.isfile(log_path):
+        return {"error": f"Log not found: {log_name}"}
+    entries = _parse_log_lines(log_path, tail=tail_lines * 2)
+    return {"entries": entries[-tail_lines:], "total_lines": _count_lines(log_path)}
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# HTTP handler
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+class ControlPanelHandler(SimpleHTTPRequestHandler):
+    """Serves the integrated control-panel SPA and all JSON APIs."""
+
+    run_root = DEFAULT_RUN_DIR
+    ui_profile = DEFAULT_UI_PROFILE
+
+    def __init__(self, *args, **kwargs):
+        self._webdir = os.path.dirname(os.path.abspath(__file__))
+        super().__init__(*args, directory=self._webdir, **kwargs)
+
+    # â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def _json_response(self, obj, status=200):
+        payload = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _read_json_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0:
+            return None
+        return json.loads(self.rfile.read(length).decode())
+
+    def _serve_file(self, filename, content_type):
+        fpath = os.path.join(self._webdir, filename)
+        try:
+            with open(fpath, "rb") as fh:
+                data = fh.read()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            # Always serve fresh SPA assets; stale browser cache caused UI regressions to linger.
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            self.end_headers()
+            self.wfile.write(data)
+        except FileNotFoundError:
+            self.send_error(404)
+
+    def _query_params(self):
+        parsed = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        return {key: values[-1] if values else "" for key, values in parsed.items()}
+
+    def log_message(self, fmt, *args):
+        pass  # suppress per-request logging
+
+    # â”€â”€ GET routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def do_GET(self):
+        raw_path = self.path.split("?")[0]
+        path = unquote_plus(raw_path)
+        if path != "/":
+            path = path.rstrip("/")
+
+        # Keep this endpoint robust against encoded/trailing-slash variations.
+        if path.rstrip("/") == "/api/analysis-portable-check":
+            return self._json_response(check_analysis_portable())
+
+        if path.rstrip("/") == "/api/runtime/self-contained-status":
+            payload = get_self_contained_runtime_status()
+            return self._json_response(payload, 200 if payload.get("status") == "ready" else 503)
+
+        if path.rstrip("/") == "/api/analysis/runtime-config":
+            return self._json_response(get_analysis_runtime_config())
+
+        if path.rstrip("/") == "/api/ui/profile":
+            return self._json_response(get_ui_profile_config())
+
+        # Server status endpoint (no auth required, useful for monitoring and debugging)
+        if path == "/api/controlpanel/status":
+            return self._json_response(_get_server_status_info())
+
+
+        if path in ("/", "/index.html"):
+            self._serve_file("index.html", "text/html")
+
+        # -- parameterisation --
+        elif path == "/api/template":
+            self._json_response(parse_xrun_template(TEMPLATE_PATH))
+        elif path == "/api/scenarios":
+            self._json_response(get_scenarios())
+        elif path == "/api/scenario-extent":
+            scenario_path = self._query_params().get("path", "")
+            try:
+                payload = get_scenario_extent(scenario_path)
+                status = 400 if payload.get("error") else 200
+                self._json_response(payload, status)
+            except Exception as exc:
+                self._json_response({"error": f"Scenario extent failed: {exc}"}, 500)
+        elif path == "/api/scenario-inspect":
+            scenario_path = self._query_params().get("path", "")
+            try:
+                payload = inspect_scenario(scenario_path)
+                status = 400 if payload.get("error") else 200
+                self._json_response(payload, status)
+            except Exception as exc:
+                self._json_response({"error": f"Scenario inspect failed: {exc}"}, 500)
+        elif path == "/api/scenario-geometry":
+            scenario_path = self._query_params().get("path", "")
+            try:
+                self._json_response({"status": "success", **build_scenario_geometry(scenario_path)})
+            except Exception as exc:
+                self._json_response({"status": "error", "message": str(exc)}, 400)
+        elif path.startswith("/api/scenario-subset/status/"):
+            job_id = path.rstrip("/").split("/")[4]
+            payload = subset_job_status(job_id)
+            status = 404 if payload.get("error") else 200
+            self._json_response(payload, status)
+        elif path == "/api/log-warning-downgrades":
+            self._json_response({"rules": get_warning_downgrade_rules()})
+
+        # -- monitoring --
+        elif path == "/api/runs":
+            self._json_response(discover_runs(self.run_root))
+        elif path == "/api/map-explorer/runs" or self.path.startswith("/api/map-explorer/runs?"):
+            qs = parse_qs(urlparse(self.path).query)
+            run_root_raw = qs.get("run_root", [""])[0].strip()
+            run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+            self._json_response({"runs": list_map_explorer_runs(run_root)})
+        elif path == "/api/analysis/default-run-dir":
+            self._json_response({"run_dir": self.run_root})
+        elif path.startswith("/api/runs/") and "/log/" in path:
+            parts = path.split("/")
+            run_id = parts[3]
+            log_name = parts[5] if len(parts) > 5 else "experiment.log"
+            tail = int(self._query_params().get("tail", 200))
+            self._json_response(tail_log(self.run_root, run_id, log_name, tail))
+        elif path.startswith("/api/runs/"):
+            run_id = path.split("/")[3]
+            detail = run_detail(self.run_root, run_id)
+            self._json_response(detail if detail else {"error": "not found"})
+
+        # -- analysis --
+        elif path == "/api/analysis/runs" or self.path.startswith("/api/analysis/runs?"):
+            qs = parse_qs(urlparse(self.path).query)
+            run_root_raw = qs.get("run_root", [""])[0].strip()
+            run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+            self._json_response(list_runs_with_mcs(run_root))
+        elif path == "/api/analysis/exposure-models" or self.path.startswith("/api/analysis/exposure-models?"):
+            qs = parse_qs(urlparse(self.path).query)
+            experiment = qs.get("experiment", [""])[0].strip()
+            mc_run = qs.get("mc_run", [""])[0].strip()
+            run_root_raw = qs.get("run_root", [""])[0].strip()
+            run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+            try:
+                self._json_response(get_analysis_exposure_models(run_root, experiment, mc_run))
+            except ValueError as exc:
+                self._json_response({"message": str(exc)}, 400)
+            except RuntimeError as exc:
+                self._json_response({"message": str(exc)}, 500)
+        elif path.startswith("/api/analysis/status/"):
+            job_id = path.rstrip("/").split("/")[4]
+            self._json_response(analysis_job_status(job_id))
+        elif path.startswith("/api/analysis/outputs/"):
+            job_id = path.rstrip("/").split("/")[4]
+            self._json_response(analysis_job_outputs(job_id))
+        elif path.startswith("/api/analysis/table/"):
+            job_id = path.rstrip("/").split("/")[4]
+            with _analysis_lock:
+                job = _analysis_jobs.get(job_id)
+            if job is None:
+                return self._json_response({"error": "Job not found"}, 404)
+            tbl = os.path.join(job["output_dir"], "pecsw_table.json")
+            if not os.path.isfile(tbl):
+                return self._json_response({"error": "Table not yet available"}, 404)
+            with open(tbl, encoding="utf-8") as fh:
+                self._json_response(json.load(fh))
+        elif path.startswith("/api/analysis/file/"):
+            # /api/analysis/file/<job_id>/<filename>
+            p = path.split("/", 5)
+            job_id   = p[4] if len(p) > 4 else ""
+            filename = p[5] if len(p) > 5 else ""
+            self._serve_analysis_file(job_id, filename)
+
+        else:
+            super().do_GET()
+
+    # â”€â”€ POST routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def do_POST(self):
+        raw_path = self.path.split("?")[0]
+        path = unquote_plus(raw_path)
+        if path != "/":
+            path = path.rstrip("/")
+        try:
+            if path == "/api/xrun-files":
+                self._handle_xrun_files()
+            elif path == "/api/run":
+                self._handle_run()
+            elif path == "/api/save":
+                self._handle_save()
+            elif path == "/api/save-as":
+                self._handle_save_as()
+            elif path == "/api/open-xrun":
+                self._handle_open_xrun()
+            elif path == "/api/scenario-subset/start":
+                self._handle_scenario_subset_start()
+            elif path.startswith("/api/scenario-subset/cancel/"):
+                self._handle_scenario_subset_cancel(path)
+            elif path == "/api/scenario-subset":
+                self._handle_scenario_subset()
+            elif path == "/api/map-explorer/geometry":
+                self._handle_map_geometry()
+            elif path == "/api/map-explorer/timeseries":
+                self._handle_map_timeseries()
+            elif path.startswith("/api/runs/") and path.endswith("/abort"):
+                self._handle_abort(path)
+            elif path.startswith("/api/runs/") and path.endswith("/delete"):
+                self._handle_delete(path)
+            elif path == "/api/analysis/start":
+                self._handle_analysis_start()
+            else:
+                self._json_response({"status": "error", "message": f"Unknown endpoint: {path}"}, 404)
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 500)
+
+    # â”€â”€ POST handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def _handle_map_geometry(self):
+        data = self._read_json_body() or {}
+        experiment = (data.get("experiment") or "").strip()
+        mc_run = (data.get("mc_run") or "").strip()
+        run_root_raw = (data.get("run_root") or "").strip()
+        run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+        if not experiment or not mc_run:
+            return self._json_response(
+                {"status": "error", "message": "experiment and mc_run are required"},
+                400,
+            )
+        try:
+            paths = _resolve_mc_store_paths(run_root, experiment, mc_run)
+            geom_payload = _build_map_geometry(paths["arr_path"], paths["scenario_path"])
+            self._json_response({
+                "status": "success",
+                "scenario_path": paths["scenario_rel"],
+                "geojson": geom_payload["geojson"],
+                "lulc_geojson": geom_payload.get("lulc_geojson", {"type": "FeatureCollection", "features": []}),
+                "meta": geom_payload["meta"],
+                "lulc_meta": geom_payload.get("lulc_meta", {}),
+            })
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 400)
+
+    def _handle_scenario_subset(self):
+        data = self._read_json_body() or {}
+        source_scenario = (data.get("source_scenario") or "").strip()
+        target_name = (data.get("target_name") or "").strip()
+        subset_start = (data.get("subset_start") or "").strip()
+        subset_end = (data.get("subset_end") or "").strip()
+        selected_reaches = data.get("selected_reaches") or []
+        max_lulc_distance = int(data.get("max_lulc_distance") or 100)
+        max_number_cores = _coerce_max_number_cores(data.get("max_number_cores"))
+        if not source_scenario or not target_name or not subset_start or not subset_end:
+            return self._json_response(
+                {"status": "error", "message": "source_scenario, target_name, subset_start, and subset_end are required"},
+                400,
+            )
+        try:
+            payload = create_scenario_subset(
+                source_scenario,
+                target_name,
+                subset_start,
+                subset_end,
+                selected_reaches=selected_reaches,
+                max_lulc_distance=max_lulc_distance,
+                max_number_cores=max_number_cores,
+            )
+            self._json_response({
+                "status": "success",
+                "message": f"Created subset scenario {payload['scenario_path']}",
+                **payload,
+            })
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 400)
+
+    def _handle_scenario_subset_start(self):
+        data = self._read_json_body() or {}
+        source_scenario = (data.get("source_scenario") or "").strip()
+        target_name = (data.get("target_name") or "").strip()
+        subset_start = (data.get("subset_start") or "").strip()
+        subset_end = (data.get("subset_end") or "").strip()
+        selected_reaches = data.get("selected_reaches") or []
+        max_lulc_distance = int(data.get("max_lulc_distance") or 100)
+        max_number_cores = _coerce_max_number_cores(data.get("max_number_cores"))
+        if not source_scenario or not target_name or not subset_start or not subset_end:
+            return self._json_response(
+                {"status": "error", "message": "source_scenario, target_name, subset_start, and subset_end are required"},
+                400,
+            )
+        try:
+            job_id = start_subset_job(
+                source_scenario,
+                target_name,
+                subset_start,
+                subset_end,
+                selected_reaches=selected_reaches,
+                max_lulc_distance=max_lulc_distance,
+                max_number_cores=max_number_cores,
+            )
+            self._json_response({
+                "status": "success",
+                "job_id": job_id,
+                "message": "Subset creation started",
+            })
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 400)
+
+    def _handle_scenario_subset_cancel(self, path: str):
+        job_id = path.rstrip("/").split("/")[4] if path else ""
+        if not job_id:
+            return self._json_response({"status": "error", "message": "job_id is required"}, 400)
+        payload = cancel_subset_job(job_id)
+        if payload.get("error"):
+            return self._json_response({"status": "error", "message": payload["error"]}, 404)
+        self._json_response({"status": "success", **payload})
+
+    def _handle_map_timeseries(self):
+        data = self._read_json_body() or {}
+        experiment = (data.get("experiment") or "").strip()
+        mc_run = (data.get("mc_run") or "").strip()
+        run_root_raw = (data.get("run_root") or "").strip()
+        run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+        if not experiment or not mc_run:
+            return self._json_response(
+                {"status": "error", "message": "experiment and mc_run are required"},
+                400,
+            )
+        try:
+            reach_ids = _coerce_list_of_reach_ids(data.get("reach_ids") or [])
+            paths = _resolve_mc_store_paths(run_root, experiment, mc_run)
+            payload = _build_map_timeseries(
+                paths["arr_path"],
+                reach_ids,
+                time_from=(data.get("time_from") or "").strip() or None,
+                time_to=(data.get("time_to") or "").strip() or None,
+                resolution=(data.get("resolution") or "auto").strip() or "auto",
+            )
+            self._json_response({"status": "success", **payload})
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 400)
+
+    def _handle_xrun_files(self):
+        data = self._read_json_body()
+        if not data or not data.get("path", "").strip():
+            return self._json_response(
+                {"status": "error", "message": "Path not provided"}, 400
+            )
+        files = get_available_parameter_files(data["path"].strip())
+        self._json_response({"status": "success", "files": files, "count": len(files)})
+
+    def _handle_run(self):
+        params = self._read_json_body()
+        base_sim_id = params.get(
+            "Control/ExperimentID", params.get("ExperimentID", "Simulation")
+        )
+        base_sim_id = re.sub(r"_(?:\d{6}\d{6}|\d{6}-\d{6}|\d{8}-\d{6}|\d{14})$", "", str(base_sim_id).strip())
+        ts = datetime.datetime.now().strftime("%d%m%Y-%H%M%S")
+        sim_id = f"{base_sim_id}_{ts}"
+
+        # Use timestamped experiment ID for execution folder names under run/.
+        params["Control/ExperimentID"] = sim_id
+        params["ExperimentID"] = sim_id
+
+        output_filename = f"{sim_id}.xrun"
+        output_path = os.path.join(OUTPUT_DIR, output_filename)
+        run_params = _normalize_run_parameters(params, output_path)
+        create_xrun_file(run_params, output_path, TEMPLATE_PATH)
+
+        def _launch():
+            try:
+                proc = subprocess.Popen(
+                    [START_BAT, output_path],
+                    cwd=BASE_DIR,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                )
+                with _proc_lock:
+                    _running_processes[sim_id] = proc
+                    _running_started_at[sim_id] = time.time()
+            except Exception as e:
+                print(f"Error starting simulation: {e}")
+
+        threading.Thread(target=_launch, daemon=True).start()
+        self._json_response({
+            "status": "success",
+            "message": f"Model started with configuration: {output_filename}",
+            "experiment_id": sim_id,
+            "xrun_path": output_path,
+        })
+
+    def _handle_save(self):
+        data = self._read_json_body()
+        params = data.get("parameters", data)
+        if "path" in data and "filename" in data:
+            fn = normalize_parameter_filename(data["filename"])
+            save_dir = os.path.abspath(data["path"])
+            stem = Path(fn).stem
+        else:
+            sid = params.get("Control/ExperimentID", "Simulation")
+            save_dir = OUTPUT_DIR
+            stem = sid
+
+        os.makedirs(save_dir, exist_ok=True)
+        xrun_output = os.path.join(save_dir, f"{stem}.xrun")
+        yaml_output = os.path.join(save_dir, f"{stem}.yaml")
+
+        write_parameter_file(params, xrun_output)
+        write_parameter_file(params, yaml_output)
+        self._json_response({
+            "status": "success",
+            "message": (
+                f"Configuration saved to: {os.path.basename(xrun_output)} and "
+                f"{os.path.basename(yaml_output)}"
+            ),
+            "xrun_path": xrun_output,
+            "yaml_path": yaml_output,
+        })
+
+    def _handle_save_as(self):
+        data = self._read_json_body()
+        fn = normalize_parameter_filename(data.get("filename", "configuration"))
+        save_dir = os.path.abspath(data.get("path", OUTPUT_DIR))
+        os.makedirs(save_dir, exist_ok=True)
+        output = os.path.join(save_dir, fn)
+        write_parameter_file(data.get("parameters", {}), output)
+        self._json_response({
+            "status": "success",
+            "message": f"Configuration saved as: {fn}",
+            "filename": fn,
+            "xrun_path": output,
+        })
+
+    def _handle_abort(self, path):
+        """Kill a running simulation's entire process tree."""
+        # path = /api/runs/<id>/abort
+        parts = path.strip("/").split("/")
+        run_id = parts[2] if len(parts) >= 4 else None
+        if not run_id:
+            return self._json_response(
+                {"status": "error", "message": "Missing run ID"}, 400
+            )
+
+        proc = None
+        with _proc_lock:
+            proc = _running_processes.get(run_id)
+
+        if proc is None:
+            return self._json_response(
+                {"status": "error",
+                 "message": f"No tracked process for '{run_id}'. "
+                            "Only simulations launched from this server session can be aborted."},
+                404,
+            )
+
+        pid = proc.pid
+        try:
+            # Windows: kill the entire process tree (bat â†’ python â†’ children)
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                timeout=10,
+            )
+            with _proc_lock:
+                _running_processes.pop(run_id, None)
+                _running_started_at.pop(run_id, None)
+            print(f"Aborted simulation '{run_id}' (PID {pid})")
+            return self._json_response({
+                "status": "success",
+                "message": f"Simulation '{run_id}' aborted (PID {pid})",
+            })
+        except Exception as exc:
+            return self._json_response(
+                {"status": "error", "message": f"Failed to kill process: {exc}"},
+                500,
+            )
+
+    def _handle_delete(self, path):
+        """Permanently delete a simulation run folder (aborting it first if still running)."""
+        # path = /api/runs/<id>/delete
+        parts = path.strip("/").split("/")
+        run_id = parts[2] if len(parts) >= 4 else None
+        if not run_id:
+            return self._json_response(
+                {"status": "error", "message": "Missing run ID"}, 400
+            )
+
+        # Security: reject any run_id that contains path separators or traversal sequences
+        if any(c in run_id for c in (os.sep, '/', '\\', '..')):
+            return self._json_response(
+                {"status": "error", "message": "Invalid run ID"}, 400
+            )
+
+        run_path = os.path.abspath(os.path.join(self.run_root, run_id))
+        run_root_abs = os.path.abspath(self.run_root)
+        if not run_path.startswith(run_root_abs + os.sep):
+            return self._json_response(
+                {"status": "error", "message": "Invalid run ID"}, 400
+            )
+
+        if not os.path.isdir(run_path):
+            return self._json_response(
+                {"status": "error", "message": f"Run '{run_id}' not found"}, 404
+            )
+
+        # If the simulation is still tracked as running, abort it first
+        with _proc_lock:
+            proc = _running_processes.get(run_id)
+            if proc is not None and proc.poll() is None:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                        capture_output=True,
+                        timeout=10,
+                    )
+                except Exception:
+                    pass
+            _running_processes.pop(run_id, None)
+            _running_started_at.pop(run_id, None)
+
+        try:
+            shutil.rmtree(run_path)
+            print(f"Deleted run folder: {run_path}")
+            return self._json_response({
+                "status": "success",
+                "message": f"Run '{run_id}' deleted.",
+            })
+        except Exception as exc:
+            return self._json_response(
+                {"status": "error", "message": f"Failed to delete run: {exc}"},
+                500,
+            )
+
+    def _handle_analysis_start(self):
+        """Launch run_basic_analysis.py as a subprocess for a selected MC run."""
+        data = self._read_json_body() or {}
+        runtime_config = get_analysis_runtime_config()
+        if runtime_config.get("mode") == "remote":
+            service_url = runtime_config.get("service_url") or ""
+            return self._json_response(
+                {
+                    "status": "error",
+                    "message": (
+                        "Remote analysis mode is enabled but control panel proxy forwarding "
+                        "is not implemented yet in this branch. "
+                        "Set XAQ_ANALYSIS_MODE=local to continue using embedded analysis."
+                    ),
+                    "analysis_mode": "remote",
+                    "analysis_service_url": service_url,
+                },
+                501,
+            )
+        experiment = (data.get("experiment") or "").strip()
+        mc_run     = (data.get("mc_run")     or "").strip()
+        if not experiment or not mc_run:
+            return self._json_response(
+                {"status": "error", "message": "experiment and mc_run are required"}, 400)
+        for val, name in [(experiment, "experiment"), (mc_run, "mc_run")]:
+            if any(c in val for c in (os.sep, "/", "\\", "..")):
+                return self._json_response(
+                    {"status": "error", "message": f"Invalid {name}"}, 400)
+        run_root_raw = (data.get("run_root") or "").strip()
+        run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+        mc_path = os.path.abspath(
+            os.path.join(run_root, experiment, "mcs", mc_run))
+        if not os.path.isdir(mc_path):
+            return self._json_response(
+                {"status": "error",
+                 "message": f"MC run folder not found: {mc_path}"}, 404)
+
+        runtime_error = _analysis_runtime_error()
+        if runtime_error:
+            return self._json_response(
+                {"status": "error", "message": runtime_error}, 500)
+        analysis_python = _pick_analysis_python()
+        if not analysis_python:
+            return self._json_response(
+                {"status": "error", "message": "Analysis runtime disappeared during startup. Please retry."},
+                500,
+            )
+        scenario_rel  = (data.get("scenario_path") or "").strip()
+        scenario_path = (os.path.abspath(os.path.join(BASE_DIR, scenario_rel))
+                         if scenario_rel else BASE_DIR)
+        scenario_name = (data.get("scenario_name") or "").strip()
+        exposure_model = (data.get("exposure_model") or "CascadeToxswa").strip()
+        _valid_exposure_models = {"CascadeToxswa", "StepsRiverNetwork"}
+        if exposure_model not in _valid_exposure_models:
+            return self._json_response(
+                {"status": "error",
+                 "message": f"Invalid exposure_model '{exposure_model}'. "
+                            f"Must be one of: {', '.join(sorted(_valid_exposure_models))}"},
+                400,
+            )
+        ts        = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        subfolder = f"{experiment}_{mc_run}__{ts}"
+        job_id    = subfolder
+        out_raw   = (data.get("output_dir") or "").strip()
+        base_dir  = os.path.abspath(out_raw) if out_raw else ANALYSIS_OUTPUT_ROOT
+        out_dir   = os.path.join(base_dir, subfolder)
+        os.makedirs(out_dir, exist_ok=True)
+        log_path = os.path.join(out_dir, "analysis.log")
+        cmd = [
+            analysis_python, ANALYSIS_SCRIPT,
+            "--mc-path",       mc_path,
+            "--scenario-path", scenario_path,
+            "--scenario-name", scenario_name,
+            "--output-dir",    out_dir,
+            "--run-pec",       str(data.get("run_pec",       True)).lower(),
+            "--run-guts",      str(data.get("run_guts",      True)).lower(),
+            "--exposed-only",  str(data.get("exposed_only",  False)).lower(),
+            "--exposure-model", exposure_model,
+        ]
+        for flag, key in [
+            ("--reach-ids-single", "reach_ids_single"),
+            ("--reach-ids-group",  "reach_ids_group"),
+            ("--plotzoom-from",    "plotzoom_from"),
+            ("--plotzoom-to",      "plotzoom_to"),
+        ]:
+            val = (data.get(key) or "").strip()
+            if val:
+                cmd += [flag, val]
+        try:
+            with open(log_path, "w", encoding="utf-8") as lf:
+                proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT,
+                                        cwd=BASE_DIR,
+                                        env=_analysis_subprocess_env())
+            with _analysis_lock:
+                _analysis_jobs[job_id] = {
+                    "proc":       proc,
+                    "output_dir": out_dir,
+                    "log_path":   log_path,
+                    "started_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            print(f"Analysis started: job={job_id} pid={proc.pid}")
+            return self._json_response({
+                "status":  "success",
+                "job_id":  job_id,
+                "message": f"Analysis started (job: {job_id})",
+            })
+        except Exception as exc:
+            return self._json_response(
+                {"status": "error",
+                 "message": f"Failed to start analysis: {exc}"}, 500)
+
+    def _serve_analysis_file(self, job_id, filename):
+        """Serve an output file (image / Excel) from an analysis job."""
+        with _analysis_lock:
+            job = _analysis_jobs.get(job_id)
+        if job is None:
+            return self._json_response({"error": "Job not found"}, 404)
+        filename  = os.path.basename(filename)
+        file_path = os.path.join(job["output_dir"], filename)
+        if not os.path.isfile(file_path):
+            return self.send_error(404)
+        ext = os.path.splitext(filename)[1].lower()
+        ct_map = {
+            ".png":  "image/png",
+            ".jpg":  "image/jpeg",
+            ".svg":  "image/svg+xml",
+            ".xlsx": ("application/vnd.openxmlformats-officedocument"
+                      ".spreadsheetml.sheet"),
+        }
+        ct = ct_map.get(ext, "application/octet-stream")
+        try:
+            with open(file_path, "rb") as fh:
+                raw = fh.read()
+            self.send_response(200)
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(raw)))
+            if ext not in (".png", ".jpg", ".svg"):
+                self.send_header("Content-Disposition",
+                                 f'attachment; filename="{filename}"')
+            self.end_headers()
+            self.wfile.write(raw)
+        except (OSError, ConnectionError):
+            pass
+
+    def _handle_open_xrun(self):
+        data = self._read_json_body()
+        xrun_dir = os.path.abspath(data.get("path", BASE_DIR))
+        xrun_path = os.path.join(xrun_dir, data.get("filename", ""))
+        xrun_path = os.path.abspath(xrun_path)
+        if not os.path.isfile(xrun_path):
+            return self._json_response(
+                {"status": "error", "message": "File not found"}, 404
+            )
+        ext = os.path.splitext(xrun_path)[1].lower()
+        if ext not in PARAM_FILE_EXTENSIONS:
+            return self._json_response(
+                {"status": "error", "message": "Unsupported file extension"}, 400
+            )
+        params = parse_parameter_file(xrun_path)
+        self._json_response({
+            "status": "success",
+            "parameters": params,
+            "filename": data.get("filename"),
+        })
+
+
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Main
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+def main():
+    ap = argparse.ArgumentParser(description="xAquaticRisk Control Panel")
+    ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--run-dir", default=DEFAULT_RUN_DIR)
+    ap.add_argument(
+        "--ui-profile",
+        default=os.environ.get(UI_PROFILE_ENV, DEFAULT_UI_PROFILE),
+        choices=sorted(VALID_UI_PROFILES),
+        help="UI profile to expose: all, prep, or analysis",
+    )
+    args = ap.parse_args()
+
+    ControlPanelHandler.run_root = os.path.abspath(args.run_dir)
+    ControlPanelHandler.ui_profile = _normalize_ui_profile(args.ui_profile)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    try:
+        _acquire_single_instance_lock(args.port)
+    except RuntimeError as exc:
+        print(f"[controlpanel] {exc}")
+        sys.exit(1)
+
+    try:
+        server = HTTPServer(("0.0.0.0", args.port), ControlPanelHandler)
+        runtime_status = get_self_contained_runtime_status()
+        print("=" * 60)
+        print("  xAquaticRisk Control Panel")
+        print("=" * 60)
+        print(f"  URL              : http://localhost:{args.port}")
+        print(f"  Template         : {TEMPLATE_PATH}")
+        print(f"  Parameterisation : {OUTPUT_DIR}")
+        print(f"  Run folder       : {ControlPanelHandler.run_root}")
+        print(f"  Scenarios        : {os.path.join(BASE_DIR, 'scenario')}")
+        print(f"  UI profile       : {ControlPanelHandler.ui_profile}")
+        print(f"  Runtime status   : {runtime_status.get('status')}")
+        if runtime_status.get("warnings"):
+            for warning in runtime_status["warnings"]:
+                print(f"  Runtime warning  : {warning}")
+        print("=" * 60)
+        print("  Press Ctrl+C to stop.\n")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            print("\nShutting down.")
+        finally:
+            server.server_close()
+    finally:
+        _release_single_instance_lock()
+
+
+if __name__ == "__main__":
+    main()

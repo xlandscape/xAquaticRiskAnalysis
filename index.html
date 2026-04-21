@@ -1,0 +1,3526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>xAquaticRisk — Control Panel</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+/* ── Reset & variables ──────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#181b24;--bg3:#21252f;--border:#2c313d;
+  --text:#c9d1d9;--text2:#8b949e;--accent:#58a6ff;
+  --ok:#3fb950;--info:#c9d1d9;--note:#79c0ff;--warn:#d29922;--err:#f85149;
+  --font:'Segoe UI','Inter',system-ui,sans-serif;
+  --mono:'Cascadia Code','Fira Code','Consolas',monospace;
+  --radius:6px;
+}
+html{font-size:14px}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;overflow:hidden;height:100vh}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Top bar ────────────────────────────────────────────────────── */
+.topbar{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  height:48px;display:flex;align-items:center;padding:0 1.2rem;gap:.8rem;
+  position:fixed;top:0;left:0;right:0;z-index:100;
+}
+.topbar h1{font-size:1.05rem;font-weight:700;color:#fff;white-space:nowrap}
+.topbar .tag{font-size:.65rem;background:var(--accent);color:#000;padding:1px 8px;border-radius:3px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+
+/* Tab strip in topbar */
+.tab-strip{display:flex;gap:0;margin-left:2rem}
+.tab-btn{
+  display:flex;align-items:center;gap:.4rem;
+  padding:.55rem 1.2rem;font-size:.82rem;font-weight:600;cursor:pointer;
+  color:var(--text2);border:none;background:none;
+  border-bottom:2px solid transparent;transition:all .15s;
+  font-family:var(--font);
+}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-btn svg{width:15px;height:15px;fill:currentColor}
+.topbar .spacer{flex:1}
+.topbar .status-pill{font-size:.72rem;padding:2px 10px;border-radius:10px;background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
+
+/* ── Body layout ────────────────────────────────────────────────── */
+.page{display:none;position:fixed;top:48px;bottom:0;left:0;right:0;overflow-y:auto}
+.page.active{display:block}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONFIGURE TAB
+   ═══════════════════════════════════════════════════════════════════ */
+.cfg-wrap{max-width:960px;margin:0 auto;padding:1.5rem 1.5rem 4rem}
+
+/* Card */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1rem;overflow:hidden}
+.card-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.65rem 1rem;cursor:pointer;-webkit-user-select:none;user-select:none;
+  font-weight:600;font-size:.85rem;color:var(--text);
+  border-bottom:1px solid var(--border);transition:background .15s;
+}
+.card-header:hover{background:var(--bg3)}
+.card-header .toggle{font-size:.7rem;transition:transform .2s}
+.card-header.collapsed .toggle{transform:rotate(-90deg)}
+.card-body{padding:.9rem 1rem;transition:max-height .3s ease}
+.card-body.collapsed{display:none}
+
+/* Form elements */
+.form-group{margin-bottom:.85rem}
+.form-group label{display:block;font-size:.78rem;font-weight:600;color:var(--text);margin-bottom:.25rem}
+.form-group input,.form-group select,.form-group textarea{
+  width:100%;padding:.45rem .65rem;font-size:.82rem;
+  background:var(--bg);color:var(--text);border:1px solid var(--border);
+  border-radius:4px;font-family:var(--font);transition:border .15s;
+}
+.form-group input:focus,.form-group select:focus{border-color:var(--accent);outline:none}
+.form-group .help-text{font-size:.7rem;color:var(--text2);margin-top:.2rem}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:0 1.2rem}
+
+/* Section sub-heading */
+.section-heading{font-size:.82rem;font-weight:600;color:var(--accent);margin:1.1rem 0 .7rem;padding-bottom:.3rem;border-bottom:1px solid var(--border)}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.5rem 1.1rem;font-size:.82rem;font-weight:600;border-radius:4px;
+  cursor:pointer;border:1px solid transparent;font-family:var(--font);transition:all .15s;
+}
+.btn-primary{background:var(--ok);color:#000;border-color:var(--ok)}
+.btn-primary:hover{background:#2ea043;border-color:#2ea043}
+.btn-secondary{background:var(--accent);color:#000;border-color:var(--accent)}
+.btn-secondary:hover{background:#388bfd}
+.btn-outline{background:transparent;color:var(--text);border-color:var(--border)}
+.btn-outline:hover{background:var(--bg3);border-color:var(--text2)}
+.btn-sm{padding:.3rem .7rem;font-size:.75rem}
+.btn-danger{background:#da3633;color:#fff;border-color:#da3633}
+.btn-danger:hover{background:#b62324;border-color:#b62324}
+.btn-danger:disabled{opacity:.4;cursor:not-allowed}
+
+.button-group{display:flex;gap:.7rem;padding:1rem;flex-wrap:wrap;justify-content:flex-end}
+
+/* Status messages */
+.status-message{margin:.8rem 1rem;padding:.55rem .8rem;border-radius:4px;font-size:.8rem;display:none}
+.status-message.show{display:block}
+.status-message.success{background:rgba(63,185,80,.12);border:1px solid var(--ok);color:var(--ok)}
+.status-message.warning{background:rgba(210,153,34,.12);border:1px solid var(--warn);color:var(--warn)}
+.status-message.note{background:rgba(121,192,255,.12);border:1px solid var(--note);color:var(--note)}
+.status-message.error{background:rgba(248,81,73,.12);border:1px solid var(--err);color:var(--err)}
+
+.subset-meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.7rem;margin-top:.55rem}
+.subset-stat{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:.6rem .75rem}
+.subset-stat .label{font-size:.68rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em}
+.subset-stat .value{font-size:.83rem;color:var(--text);margin-top:.18rem;font-family:var(--mono)}
+.subset-warnings{margin-top:.7rem;padding-left:1rem;color:var(--warn);font-size:.75rem}
+.subset-warnings:empty{display:none}
+.subset-summary{font-size:.75rem;color:var(--text2);margin-top:.55rem}
+.subset-map{height:300px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg)}
+.subset-selection{margin-top:.55rem;font-size:.75rem;color:var(--text2)}
+.subset-chip-list{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.45rem;max-height:84px;overflow:auto}
+.subset-chip{display:inline-block;padding:.18rem .5rem;border-radius:999px;background:var(--bg3);border:1px solid var(--border);font-family:var(--mono);font-size:.7rem;color:var(--text)}
+
+/* Loading */
+.loading{display:none;text-align:center;padding:1rem}
+.loading.show{display:block}
+.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto .5rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MONITOR TAB
+   ═══════════════════════════════════════════════════════════════════ */
+.mon-layout{display:flex;height:100%}
+.sidebar{width:320px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0}
+.main-panel{flex:1;overflow-y:auto;padding:1.2rem 1.5rem}
+
+/* Sidebar */
+.sidebar-header{padding:.7rem 1rem;font-size:.78rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.run-card{padding:.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+.run-card:hover{background:var(--bg3)}
+.run-card.active{background:var(--bg3);border-left:3px solid var(--accent)}
+.run-card .name{font-weight:600;font-size:.83rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run-card .meta{font-size:.7rem;color:var(--text2);display:flex;gap:.8rem;margin-top:2px}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.status-running{background:var(--accent);animation:pulse 1.5s infinite}
+.status-finished{background:var(--ok)}
+.status-warning{background:var(--warn)}
+.status-error{background:var(--err)}
+.status-initializing{background:var(--text2);animation:pulse 1.5s infinite}
+.status-unknown{background:var(--text2)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Panels */
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1rem}
+.panel-head{padding:.55rem 1rem;font-weight:600;font-size:.82rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.6rem}
+.panel-body{padding:.8rem 1rem}
+
+/* Overview cards */
+.overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.7rem;margin-bottom:1rem}
+.stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:.65rem .8rem;text-align:center}
+.stat-card .label{font-size:.68rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em}
+.stat-card .value{font-size:1.4rem;font-weight:700;margin-top:.1rem}
+.stat-card .value.ok{color:var(--ok)}
+.stat-card .value.warn{color:var(--warn)}
+.stat-card .value.err{color:var(--err)}
+.stat-card .value.info{color:var(--accent)}
+
+/* MC progress */
+.mc-row{display:flex;align-items:center;gap:.8rem;margin-bottom:.5rem}
+.mc-label{width:170px;font-size:.76rem;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.progress-bar{flex:1;height:16px;background:var(--bg);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.progress-fill.running{background:linear-gradient(90deg,var(--accent),#388bfd);animation:shimmer 2s infinite}
+.progress-fill.finished{background:var(--ok)}
+.progress-fill.warning{background:var(--warn)}
+.progress-fill.error{background:var(--err)}
+.progress-pct{width:45px;font-size:.73rem;text-align:right;color:var(--text2);flex-shrink:0}
+.mc-comp{font-size:.68rem;color:var(--text2);margin-left:178px;margin-top:-3px;margin-bottom:6px}
+@keyframes shimmer{0%{opacity:.85}50%{opacity:1}100%{opacity:.85}}
+
+/* Component pipeline */
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:.25rem .8rem;font-size:.72rem;font-family:var(--mono)}
+.comp-item{display:flex;align-items:center;gap:.4rem;padding:2px 4px;border-radius:3px}
+.comp-item.done{color:var(--ok)}
+.comp-item.active{color:var(--accent);font-weight:600;background:rgba(88,166,255,.08)}
+.comp-item.pending{color:var(--text2);opacity:.4}
+.comp-icon{width:14px;text-align:center;flex-shrink:0}
+
+/* Log viewer */
+.log-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 .5rem;flex-wrap:wrap}
+.log-tab{padding:.35rem .8rem;font-size:.73rem;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;transition:all .15s}
+.log-tab:hover{color:var(--text)}
+.log-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.log-controls{display:flex;align-items:center;gap:.7rem;padding:.35rem 1rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.log-controls label{font-size:.7rem;color:var(--text2)}
+.log-controls input[type=checkbox]{accent-color:var(--accent)}
+.log-controls select{font-size:.7rem;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:2px 6px}
+.log-output{font-family:var(--mono);font-size:.76rem;line-height:1.6;max-height:50vh;overflow-y:auto;padding:.5rem 1rem;background:var(--bg);white-space:pre-wrap;word-break:break-all}
+.log-line{padding:1px 0}
+.log-line .sev{display:inline-block;width:44px;font-weight:700}
+.sev-ERROR{color:var(--err)}.sev-WARN{color:var(--warn)}.sev-NOTE{color:var(--note)}.sev-OK{color:var(--ok)}.sev-INFO{color:var(--info)}
+.log-line .detail{color:var(--text2);padding-left:44px;display:block}
+
+/* Parameters table */
+.params-table{width:100%;border-collapse:collapse;font-size:.76rem}
+.params-table th{text-align:left;padding:.3rem .6rem;color:var(--text2);border-bottom:1px solid var(--border);font-weight:600}
+.params-table td{padding:.25rem .6rem;border-bottom:1px solid var(--border)}
+.params-table .sec{color:var(--accent);font-weight:600}
+.params-table .param{font-family:var(--mono);color:var(--text)}
+.params-table .val{font-family:var(--mono);color:var(--ok)}
+
+/* Analysis – percentile table */
+.anl-tbl{border-collapse:collapse;font-size:.75rem;white-space:nowrap;min-width:100%}
+.anl-tbl th{padding:.3rem .65rem;background:var(--bg3);color:var(--text2);
+  font-weight:600;border:1px solid var(--border);text-align:center;position:sticky;top:0}
+.anl-tbl th.row-hdr{text-align:left;color:var(--text2);min-width:3.5rem}
+.anl-tbl td{padding:.25rem .65rem;border:1px solid var(--border);text-align:right;
+  font-family:var(--mono);color:var(--text)}
+.anl-tbl tr:hover td,.anl-tbl tr:hover th{background:var(--bg2)}
+.anl-tbl .row-hdr{color:var(--accent);font-weight:600;text-align:left;background:var(--bg3)}
+.anl-tbl .hi{color:var(--err)}.anl-tbl .lo{color:var(--ok)}
+
+/* Empty state */
+.empty{text-align:center;padding:4rem 2rem;color:var(--text2)}
+.empty h2{font-size:1.08rem;margin-bottom:.4rem}
+.empty p{font-size:.83rem}
+
+/* Explorer */
+.expl-wrap{max-width:1400px;margin:0 auto;padding:1.1rem 1.2rem 2rem}
+.expl-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:1rem}
+.expl-map-card{min-height:520px}
+.expl-map{width:100%;height:500px;background:var(--bg);border:1px solid var(--border);border-radius:6px;position:relative;overflow:hidden}
+#explLabelCanvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4}
+.expl-chart{width:100%;height:500px;background:var(--bg);border:1px solid var(--border);border-radius:6px}
+.expl-toolbar{display:grid;grid-template-columns:2fr 1fr 1fr auto auto;gap:.6rem;align-items:end}
+.expl-selection{font-size:.78rem;color:var(--text2);margin-top:.55rem}
+.expl-selection strong{color:var(--text)}
+.expl-chip-list{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.45rem;max-height:90px;overflow:auto}
+.expl-chip{font-size:.72rem;background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:.15rem .55rem;color:var(--text)}
+.expl-note{font-size:.72rem;color:var(--text2);margin-top:.35rem}
+.expl-map-hint{position:absolute;top:.5rem;left:.5rem;z-index:5;background:rgba(15,17,23,.92);border:1px solid var(--border);padding:.3rem .45rem;border-radius:4px;font-size:.72rem;color:var(--text2)}
+.expl-box{position:absolute;border:1px dashed var(--accent);background:rgba(88,166,255,.16);pointer-events:none;z-index:7}
+
+/* Inline-style replacements */
+#analysisPill{margin-left:.7rem;background:var(--bg3);color:var(--text2)}
+#refreshInfo{font-size:.65rem;color:var(--text2)}
+.u-flex-gap-6{display:flex;gap:.6rem}
+.u-flex-gap-6-start{display:flex;gap:.6rem;align-items:start}
+.u-flex-gap-6-end{display:flex;gap:.6rem;align-items:flex-end}
+.u-flex-gap-5-wrap-mb55{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.55rem}
+.u-flex-gap-6-wrap-mt8{margin-top:.8rem;display:flex;gap:.6rem;flex-wrap:wrap}
+.u-flex-gap-4{display:flex;gap:.4rem}
+.u-flex-gap-45-end{display:flex;gap:.45rem;align-items:end;padding-bottom:.05rem}
+.u-fill{flex:1}
+.u-hidden{display:none}
+.u-loading-text{font-size:.8rem;color:var(--text2)}
+.u-mt-35{margin-top:.35rem}
+.u-mt-3{margin-top:.3rem}
+.u-mt-6{margin-top:.6rem}
+.u-mt-7{margin-top:.7rem}
+.u-ml-7{margin-left:.7rem}
+.u-ml-8{margin-left:.8rem}
+.u-status-top{margin:.75rem 0 0}
+.u-w-0{width:0%}
+.u-checkbox-label{display:flex;align-items:center;gap:.5rem;cursor:pointer}
+.u-checkbox-ok{accent-color:var(--ok);width:14px;height:14px}
+.u-checkbox-warn{accent-color:var(--warn);width:14px;height:14px}
+.u-heading-muted{margin-top:.8rem;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text2)}
+.u-card-body-compact{padding:.8rem 1rem .6rem}
+.u-log-max-320{max-height:320px}
+.u-panel-head-between{display:flex;justify-content:space-between;align-items:center}
+.u-note-xs{font-size:.7rem;font-weight:400;color:var(--text2)}
+.u-table-wrap{overflow-x:auto;padding:.5rem 1rem 1rem}
+.u-output-files{display:flex;flex-wrap:wrap;gap:.7rem;padding:.6rem 1rem}
+.u-form-group-mb0{margin-bottom:0}
+.u-panel-body-tight{padding:.55rem}
+.u-action-bar{display:flex;gap:.6rem;padding:0 0 .6rem;flex-wrap:wrap}
+.u-details-right{margin-left:auto;min-width:280px}
+.u-details-summary{cursor:pointer;font-size:.72rem;color:var(--text2)}
+.u-details-body{padding:.35rem .2rem .2rem}
+.u-warn-rule-empty{font-size:.72rem;color:var(--text2)}
+.u-warn-rule-row{font-size:.72rem;color:var(--text2);margin:.2rem 0}
+.u-warn-rule-id{color:var(--note);font-weight:600}
+.u-log-warn{color:var(--warn)}
+.u-output-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.3rem .7rem;background:var(--bg3);border:1px solid var(--border);border-radius:4px;font-size:.75rem;color:var(--text);text-decoration:none}
+.u-panel-mb-8{margin-bottom:.8rem}
+.u-panel-body-gallery{padding:.5rem;text-align:center}
+.u-gallery-img{max-width:100%;border-radius:4px;cursor:zoom-in}
+
+@media (max-width: 1150px){
+  .expl-grid{grid-template-columns:1fr}
+  .expl-toolbar{grid-template-columns:1fr 1fr}
+}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text2)}
+</style>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+
+<!-- ══════════ TOP BAR ══════════ -->
+<div class="topbar">
+  <h1>xAquaticRisk</h1>
+  <span class="tag" id="uiTag">Control Panel</span>
+
+  <div class="tab-strip">
+    <button class="tab-btn active" onclick="switchTab('configure')" id="tabConfigure">
+      <svg viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/></svg>
+      Parameterisation
+    </button>
+    <button class="tab-btn" onclick="switchTab('monitor')" id="tabMonitor">
+      <svg viewBox="0 0 16 16"><path d="M1 3.5A1.5 1.5 0 012.5 2h11A1.5 1.5 0 0115 3.5v9a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9zm1.5-.5a.5.5 0 00-.5.5v9a.5.5 0 00.5.5h11a.5.5 0 00.5-.5v-9a.5.5 0 00-.5-.5h-11z"/><path d="M3 5.5a.5.5 0 01.5-.5h9a.5.5 0 010 1h-9a.5.5 0 01-.5-.5zM3 8a.5.5 0 01.5-.5h5a.5.5 0 010 1h-5A.5.5 0 013 8zm0 2.5a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3a.5.5 0 01-.5-.5z"/></svg>
+      Monitoring
+    </button>
+    <button class="tab-btn" onclick="switchTab('analysis')" id="tabAnalysis">
+      <svg viewBox="0 0 16 16"><path d="M0 0h1v15h15v1H0V0zm10 3.5a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-1 0V4.9l-3.613 4.417a.5.5 0 01-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 01-.808-.588l4-5.5a.5.5 0 01.758-.06l2.609 2.61L13.445 4H10.5a.5.5 0 01-.5-.5z"/></svg>
+      Analysis
+    </button>
+    <button class="tab-btn" onclick="switchTab('explorer')" id="tabExplorer">
+      <svg viewBox="0 0 16 16"><path d="M15.817.113A.5.5 0 0 0 15.31 0h-.083a.5.5 0 0 0-.238.06L10.5 2.31 6 0 1.276 2.362A.5.5 0 0 0 1 2.81v12.69a.5.5 0 0 0 .724.447L6 13.69l4.5 2.25 4.724-2.362a.5.5 0 0 0 .276-.447V.5a.5.5 0 0 0-.183-.387zM6.5 1.31l3 1.5v11.88l-3-1.5V1.31zm-1 11.88-3 1.5V3.31l3-1.5v11.38zm8 0-3 1.5V2.81l3-1.5v11.88z"/></svg>
+      Explorer
+    </button>
+    <button class="tab-btn" onclick="switchTab('landscape')" id="tabLandscape">
+      <svg viewBox="0 0 16 16"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M1.5 2A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13zm13 1a.5.5 0 0 1 .5.5v6l-3.775-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12v.54A.505.505 0 0 1 1 12.5v-9a.5.5 0 0 1 .5-.5h13z"/></svg>
+      Landscape Scenario
+    </button>
+  </div>
+
+  <div class="spacer"></div>
+  <span class="status-pill" id="serverPill">Connected</span>
+  <span class="status-pill" id="analysisPill" title="Checking analysis Python runtime…">Checking…</span>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     CONFIGURE PAGE
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="page active" id="pageConfigure">
+  <div class="cfg-wrap">
+
+    <!-- Parameterisation (xrun-) File Operations -->
+    <div class="card">
+      <div class="card-header" onclick="toggleSection(this)">
+        <span>Parameterisation (xrun-) File Operations</span>
+        <span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="xrunPath">Path to Parameterisation Files (.xrun / .yaml)</label>
+          <div class="u-flex-gap-6">
+            <input type="text" id="xrunPath" placeholder="e.g., parameterisation or C:\LocalWork\xAquaticRisk" value="parameterisation" class="u-fill">
+            <button type="button" class="btn btn-outline btn-sm" onclick="loadXrunFiles()">Load</button>
+          </div>
+          <div class="help-text">Defaults to the <em>parameterisation</em> subfolder. Enter another folder path and click <em>Load</em> to refresh the file list.</div>
+        </div>
+        <div class="form-group">
+          <label for="xrunSelect">Open Parameterisation File</label>
+          <div class="u-flex-gap-6-start">
+            <select id="xrunSelect" class="u-fill">
+              <option value="">Select a parameterisation file to open…</option>
+            </select>
+            <button type="button" class="btn btn-outline btn-sm" onclick="openXrunFile()">Open</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="saveAsName">Save Parameterisation As</label>
+          <div class="u-flex-gap-6">
+            <input type="text" id="saveAsName" placeholder="e.g., MyParameterisation" class="u-fill">
+            <button type="button" class="btn btn-outline btn-sm" onclick="saveAsXrun()">Save As</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Experiment Basic Settings -->
+    <form id="paramForm">
+      <div class="card">
+        <div class="card-header" onclick="toggleSection(this)">
+          <span>Experiment Basic Settings</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="Control/ExperimentID">ExperimentID</label>
+            <input type="text" id="Control/ExperimentID" name="Control/ExperimentID" placeholder="e.g., Test_Run_aqRisk">
+            <div class="help-text">A unique identifier of a simulation run</div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="Control/NumberMC">Number of Monte Carlo Runs</label>
+              <input type="number" step="1" min="1" id="Control/NumberMC" name="Control/NumberMC" placeholder="e.g., 1">
+            </div>
+            <div class="form-group">
+              <label for="Control/NumberParallelProcesses">Parallel Processes</label>
+              <input type="number" step="1" min="1" id="Control/NumberParallelProcesses" name="Control/NumberParallelProcesses" placeholder="e.g., 2">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="Scenario/LandscapeScenario">Landscape Scenario *</label>
+            <select id="Scenario/LandscapeScenario" name="Scenario/LandscapeScenario" required onchange="onScenarioChange(this.value, true)">
+              <option value="">Loading scenarios…</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="Scenario/SimulationStart">Simulation Start</label>
+              <input type="text" id="Scenario/SimulationStart" name="Scenario/SimulationStart" placeholder="YYYY-MM-DD">
+            </div>
+            <div class="form-group">
+              <label for="Scenario/SimulationEnd">Simulation End</label>
+              <input type="text" id="Scenario/SimulationEnd" name="Scenario/SimulationEnd" placeholder="YYYY-MM-DD">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Plant Protection Product Use (PPP Application) -->
+      <div class="card">
+        <div class="card-header" onclick="toggleSection(this)">
+          <span>Plant Protection Product Use (PPP Application)</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="PppUse/ApplicationRate">Application Rate (g/ha)</label>
+              <input type="number" step="any" id="PppUse/ApplicationRate" name="PppUse/ApplicationRate" placeholder="e.g., 12.5">
+            </div>
+            <div class="form-group">
+              <label for="PppUse/ApplicationTimeWindow">Application Time Window</label>
+              <input type="text" id="PppUse/ApplicationTimeWindow" name="PppUse/ApplicationTimeWindow" placeholder="MM-DD to MM-DD">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mitigation -->
+      <div class="card">
+        <div class="card-header" onclick="toggleSection(this)">
+          <span>Mitigation Measures</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="Mitigation/InCropBuffer">In-Crop Buffer (m)</label>
+              <input type="number" step="any" id="Mitigation/InCropBuffer" name="Mitigation/InCropBuffer" placeholder="e.g., 0">
+            </div>
+            <div class="form-group">
+              <label for="Mitigation/TechnologyDriftReduction">Drift Reduction (0–1)</label>
+              <input type="number" step="0.01" min="0" max="1" id="Mitigation/TechnologyDriftReduction" name="Mitigation/TechnologyDriftReduction" placeholder="e.g., 0">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exposure -->
+      <div class="card">
+        <div class="card-header" onclick="toggleSection(this)">
+          <span>Exposure Settings</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="Exposure/RautmannClass">Rautmann Class</label>
+              <select id="Exposure/RautmannClass" name="Exposure/RautmannClass">
+                <option value="orchards.early">Orchards Early</option>
+                <option value="orchards.late">Orchards Late</option>
+                <option value="arable">Arable</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="Exposure/DepositionInputFile">Deposition Input File</label>
+              <input type="text" id="Exposure/DepositionInputFile" name="Exposure/DepositionInputFile" placeholder="Leave empty for default">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Environmental Fate -->
+      <div class="card">
+        <div class="card-header collapsed" onclick="toggleSection(this)">
+          <span>Environmental Fate</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body collapsed">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/RunStepsRiverNetwork">Run StepsRiverNetwork</label>
+              <select id="EnvironmentalFate/RunStepsRiverNetwork" name="EnvironmentalFate/RunStepsRiverNetwork">
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/RunCascadeToxswa">Run CascadeToxswa</label>
+              <select id="EnvironmentalFate/RunCascadeToxswa" name="EnvironmentalFate/RunCascadeToxswa">
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-heading">Substance Properties</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/MolarMass">Molar Mass (g/mol)</label>
+              <input type="number" step="any" id="EnvironmentalFate/MolarMass" name="EnvironmentalFate/MolarMass">
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/SolubilityInWater">Solubility in Water (mg/l)</label>
+              <input type="number" step="any" id="EnvironmentalFate/SolubilityInWater" name="EnvironmentalFate/SolubilityInWater">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/DT50sw">DT50 Water (days)</label>
+              <input type="number" step="any" id="EnvironmentalFate/DT50sw" name="EnvironmentalFate/DT50sw">
+              <div class="help-text">Half-life in water at 20°C</div>
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/DT50sed">DT50 Sediment (days)</label>
+              <input type="number" step="any" id="EnvironmentalFate/DT50sed" name="EnvironmentalFate/DT50sed">
+              <div class="help-text">Half-life in sediment at 20°C</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/KOC">KOC</label>
+              <input type="number" step="any" id="EnvironmentalFate/KOC" name="EnvironmentalFate/KOC">
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/DiffusionCoefficient">Diffusion Coefficient (m²/d)</label>
+              <input type="text" id="EnvironmentalFate/DiffusionCoefficient" name="EnvironmentalFate/DiffusionCoefficient">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/SaturatedVapourPressure">Saturated Vapour Pressure (Pa)</label>
+              <input type="text" id="EnvironmentalFate/SaturatedVapourPressure" name="EnvironmentalFate/SaturatedVapourPressure">
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/MolarEnthalpyOfVaporization">Molar Enthalpy of Vaporization (kJ/mol)</label>
+              <input type="number" step="any" id="EnvironmentalFate/MolarEnthalpyOfVaporization" name="EnvironmentalFate/MolarEnthalpyOfVaporization">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/MolarEnthalpyOfDissolution">Molar Enthalpy of Dissolution (kJ/mol)</label>
+              <input type="number" step="any" id="EnvironmentalFate/MolarEnthalpyOfDissolution" name="EnvironmentalFate/MolarEnthalpyOfDissolution">
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/ReferenceConcentrationForKOC">Reference Concentration for KOC (mg/l)</label>
+              <input type="number" step="any" id="EnvironmentalFate/ReferenceConcentrationForKOC" name="EnvironmentalFate/ReferenceConcentrationForKOC">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/MolarActivationEnthalpyOfTransformationInWater">Molar Activation Enthalpy in Water (kJ/mol)</label>
+              <input type="number" step="any" id="EnvironmentalFate/MolarActivationEnthalpyOfTransformationInWater" name="EnvironmentalFate/MolarActivationEnthalpyOfTransformationInWater">
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/MolarActivationEnthalpyOfTransformationInSediment">Molar Activation Enthalpy in Sediment (kJ/mol)</label>
+              <input type="number" step="any" id="EnvironmentalFate/MolarActivationEnthalpyOfTransformationInSediment" name="EnvironmentalFate/MolarActivationEnthalpyOfTransformationInSediment">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/FreundlichExponentInSedimentAndSuspendedParticles">Freundlich Exponent</label>
+              <input type="number" step="any" id="EnvironmentalFate/FreundlichExponentInSedimentAndSuspendedParticles" name="EnvironmentalFate/FreundlichExponentInSedimentAndSuspendedParticles">
+              <div class="help-text">In sediment and suspended particles</div>
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/CoefficientForLinearAdsorptionOnMacrophytes">Adsorption on Macrophytes (l/kg)</label>
+              <input type="number" step="any" id="EnvironmentalFate/CoefficientForLinearAdsorptionOnMacrophytes" name="EnvironmentalFate/CoefficientForLinearAdsorptionOnMacrophytes">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="EnvironmentalFate/ThresholdSW">Threshold SW</label>
+              <input type="number" step="any" id="EnvironmentalFate/ThresholdSW" name="EnvironmentalFate/ThresholdSW">
+              <div class="help-text">Surface water precision (StepsRiverNetwork)</div>
+            </div>
+            <div class="form-group">
+              <label for="EnvironmentalFate/ThresholdSediment">Threshold Sediment</label>
+              <input type="number" step="any" id="EnvironmentalFate/ThresholdSediment" name="EnvironmentalFate/ThresholdSediment">
+              <div class="help-text">Sediment precision (StepsRiverNetwork)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Effect Modelling -->
+      <div class="card">
+        <div class="card-header collapsed" onclick="toggleSection(this)">
+          <span>Effect Modelling</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body collapsed">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="Effects/RunLGuts">Run LGuts</label>
+              <select id="Effects/RunLGuts" name="Effects/RunLGuts">
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="Effects/NumberOfWarmUpYears">Warm-up Years</label>
+              <input type="number" step="1" min="0" id="Effects/NumberOfWarmUpYears" name="Effects/NumberOfWarmUpYears">
+            </div>
+            <div class="form-group">
+              <label for="Effects/RecoveryPeriodYears">Recovery Period Years</label>
+              <input type="number" step="1" min="0" id="Effects/RecoveryPeriodYears" name="Effects/RecoveryPeriodYears">
+            </div>
+          </div>
+
+          <!-- Species 1 -->
+          <div class="section-heading">Species 1 Parameters</div>
+          <div class="form-group">
+            <label for="Effects/Species1">Species 1 Name</label>
+            <input type="text" id="Effects/Species1" name="Effects/Species1" placeholder="e.g., Asellus aquaticus">
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species1DominantRateConstantSD">SD Dominant Rate Constant (1/h)</label><input type="number" step="any" id="Effects/Species1DominantRateConstantSD" name="Effects/Species1DominantRateConstantSD"></div>
+            <div class="form-group"><label for="Effects/Species1ThresholdConcentrationSD">SD Threshold Concentration (ng/l)</label><input type="number" step="any" id="Effects/Species1ThresholdConcentrationSD" name="Effects/Species1ThresholdConcentrationSD"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species1KillingRateSD">SD Killing Rate (l/(ng·h))</label><input type="number" step="any" id="Effects/Species1KillingRateSD" name="Effects/Species1KillingRateSD"></div>
+            <div class="form-group"><label for="Effects/Species1DominantRateConstantIT">IT Dominant Rate Constant (1/h)</label><input type="number" step="any" id="Effects/Species1DominantRateConstantIT" name="Effects/Species1DominantRateConstantIT"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species1ThresholdDistributionIT">IT Threshold Distribution (ng/l)</label><input type="number" step="any" id="Effects/Species1ThresholdDistributionIT" name="Effects/Species1ThresholdDistributionIT"></div>
+            <div class="form-group"><label for="Effects/Species1WidthOfThresholdDistributionIT">IT Width of Threshold Distribution</label><input type="number" step="any" id="Effects/Species1WidthOfThresholdDistributionIT" name="Effects/Species1WidthOfThresholdDistributionIT"></div>
+          </div>
+
+          <!-- Species 2 -->
+          <div class="section-heading">Species 2 Parameters</div>
+          <div class="form-group">
+            <label for="Effects/Species2">Species 2 Name</label>
+            <input type="text" id="Effects/Species2" name="Effects/Species2" placeholder="e.g., Cloeon dipterum">
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species2DominantRateConstantSD">SD Dominant Rate Constant (1/h)</label><input type="number" step="any" id="Effects/Species2DominantRateConstantSD" name="Effects/Species2DominantRateConstantSD"></div>
+            <div class="form-group"><label for="Effects/Species2ThresholdConcentrationSD">SD Threshold Concentration (ng/l)</label><input type="number" step="any" id="Effects/Species2ThresholdConcentrationSD" name="Effects/Species2ThresholdConcentrationSD"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species2KillingRateSD">SD Killing Rate (l/(ng·h))</label><input type="number" step="any" id="Effects/Species2KillingRateSD" name="Effects/Species2KillingRateSD"></div>
+            <div class="form-group"><label for="Effects/Species2DominantRateConstantIT">IT Dominant Rate Constant (1/h)</label><input type="number" step="any" id="Effects/Species2DominantRateConstantIT" name="Effects/Species2DominantRateConstantIT"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species2ThresholdDistributionIT">IT Threshold Distribution (ng/l)</label><input type="number" step="any" id="Effects/Species2ThresholdDistributionIT" name="Effects/Species2ThresholdDistributionIT"></div>
+            <div class="form-group"><label for="Effects/Species2WidthOfThresholdDistributionIT">IT Width of Threshold Distribution</label><input type="number" step="any" id="Effects/Species2WidthOfThresholdDistributionIT" name="Effects/Species2WidthOfThresholdDistributionIT"></div>
+          </div>
+
+          <!-- Species 3 -->
+          <div class="section-heading">Species 3 Parameters</div>
+          <div class="form-group">
+            <label for="Effects/Species3">Species 3 Name</label>
+            <input type="text" id="Effects/Species3" name="Effects/Species3" placeholder="e.g., Gammarus pulex">
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species3DominantRateConstantSD">SD Dominant Rate Constant (1/h)</label><input type="number" step="any" id="Effects/Species3DominantRateConstantSD" name="Effects/Species3DominantRateConstantSD"></div>
+            <div class="form-group"><label for="Effects/Species3ThresholdConcentrationSD">SD Threshold Concentration (ng/l)</label><input type="number" step="any" id="Effects/Species3ThresholdConcentrationSD" name="Effects/Species3ThresholdConcentrationSD"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species3KillingRateSD">SD Killing Rate (l/(ng·h))</label><input type="number" step="any" id="Effects/Species3KillingRateSD" name="Effects/Species3KillingRateSD"></div>
+            <div class="form-group"><label for="Effects/Species3DominantRateConstantIT">IT Dominant Rate Constant (1/h)</label><input type="number" step="any" id="Effects/Species3DominantRateConstantIT" name="Effects/Species3DominantRateConstantIT"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="Effects/Species3ThresholdDistributionIT">IT Threshold Distribution (ng/l)</label><input type="number" step="any" id="Effects/Species3ThresholdDistributionIT" name="Effects/Species3ThresholdDistributionIT"></div>
+            <div class="form-group"><label for="Effects/Species3WidthOfThresholdDistributionIT">IT Width of Threshold Distribution</label><input type="number" step="any" id="Effects/Species3WidthOfThresholdDistributionIT" name="Effects/Species3WidthOfThresholdDistributionIT"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Additional Parameters (dynamic) -->
+      <div class="card u-hidden" id="additionalParamsCard">
+        <div class="card-header collapsed" onclick="toggleSection(this)">
+          <span>Additional Parameters</span>
+          <span class="toggle">&#9660;</span>
+        </div>
+        <div class="card-body collapsed" id="additionalParams"></div>
+      </div>
+
+      <!-- Action Bar -->
+      <div class="card">
+        <div class="button-group">
+          <button type="button" class="btn btn-outline" onclick="loadTemplate()">Reset to Template</button>
+          <button type="button" class="btn btn-secondary" onclick="saveConfiguration()">Save</button>
+          <button type="submit" class="btn btn-primary">&#9654; Run Simulation</button>
+        </div>
+        <div class="loading" id="loading"><div class="spinner"></div><p class="u-loading-text">Starting simulation…</p></div>
+        <div class="status-message" id="cfgStatus"></div>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     LANDSCAPE SCENARIO PAGE
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="page" id="pageLandscape">
+  <div class="cfg-wrap">
+
+    <div class="card">
+      <div class="card-header" onclick="toggleSection(this)">
+        <span>Temporal Subset</span>
+        <span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="subsetSourceScenario">Source Landscape Scenario</label>
+          <div class="u-flex-gap-6-end">
+            <select id="subsetSourceScenario" class="u-fill" onchange="onSubsetSourceChange()">
+              <option value="">Select a scenario…</option>
+            </select>
+            <button type="button" class="btn btn-outline btn-sm" onclick="useCurrentScenarioForSubset()">Sync from Parameterisation</button>
+            <button type="button" class="btn btn-outline btn-sm" id="subsetInspectBtn" onclick="inspectAndZoomSubsetScenario(true)">Inspect</button>
+          </div>
+          <div class="help-text">Inspects <em>hydro/hydro_reaches.h5</em> and derives the real valid day range from the hydrology runtime contract.</div>
+        </div>
+
+        <div class="section-heading">Spatial Reach Subset</div>
+        <div class="u-flex-gap-5-wrap-mb55">
+          <button type="button" class="btn btn-outline btn-sm" onclick="loadSubsetScenarioGeometry()">Load Scenario Map</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="selectAllSubsetReaches()">Select All</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="clearSubsetSelection()">Clear Selection</button>
+        </div>
+        <div id="subsetMap" class="subset-map"></div>
+        <div class="subset-selection">
+          Selected reaches: <strong id="subsetSelectedCount">0</strong>
+          <span id="subsetMapMeta" class="u-ml-7"></span>
+          <div class="subset-chip-list" id="subsetSelectedChips"></div>
+          <div class="help-text u-mt-35">Click stream segments to toggle selection. Hold Ctrl or Shift for additive selection. Hold Alt and drag for box-select. If none are selected, all reaches are used.</div>
+        </div>
+
+        <div class="subset-meta-grid">
+          <div class="subset-stat">
+            <div class="label">Project Extent</div>
+            <div class="value" id="subsetProjectExtent">-</div>
+          </div>
+          <div class="subset-stat">
+            <div class="label">Hydrology HDF5</div>
+            <div class="value" id="subsetHdfExtent">-</div>
+          </div>
+          <div class="subset-stat">
+            <div class="label">Effective Day Range</div>
+            <div class="value" id="subsetEffectiveExtent">-</div>
+          </div>
+          <div class="subset-stat">
+            <div class="label">Hydro Reaches / CSVs</div>
+            <div class="value" id="subsetHydroStats">-</div>
+          </div>
+        </div>
+
+        <div class="subset-summary" id="subsetSummary">Select a scenario to inspect its hydrology-backed temporal window.</div>
+        <ul class="subset-warnings" id="subsetWarnings"></ul>
+
+        <div class="section-heading">Create Subset Scenario</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="subsetTargetName">New Scenario Folder Name</label>
+            <input type="text" id="subsetTargetName" placeholder="e.g., muenster-T-Di-02.5-subset-1995-05">
+          </div>
+          <div class="form-group">
+            <label>&nbsp;</label>
+            <button type="button" class="btn btn-outline btn-sm" onclick="fillSubsetDatesFromEffective()">Use Effective Min/Max</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="subsetStartDate">Subset Start Date</label>
+            <input type="text" id="subsetStartDate" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group">
+            <label for="subsetEndDate">Subset End Date</label>
+            <input type="text" id="subsetEndDate" placeholder="YYYY-MM-DD">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="maxLulcDistance">Max LULC Distance (m)</label>
+            <input type="number" id="maxLulcDistance" value="100" min="0" max="10000" step="10">
+            <div class="help-text">Distance in meters for selecting LULC field geometries near selected reaches. Fields within this distance will be included in the subset.</div>
+          </div>
+          <div class="form-group">
+            <label for="maxNumberCores">Max Number Cores</label>
+            <input type="number" id="maxNumberCores" value="0" min="0" max="256" step="1">
+            <div class="help-text">CPU cores for TimeSeries CSV parallel trimming. Set 0 for automatic selection.</div>
+          </div>
+        </div>
+        <div class="help-text">The generated scenario will copy the source scenario, trim <em>hydro_reaches.h5</em> and <em>hydro/TimeSeries/*.csv</em>, filter LULC geometries by distance, and update the subset scenario metadata.</div>
+        <div class="u-flex-gap-6-wrap-mt8">
+          <button type="button" class="btn btn-secondary" id="subsetCreateBtn" onclick="createScenarioSubset()">Create Subset Scenario</button>
+          <button type="button" class="btn btn-outline btn-sm u-hidden" id="subsetCancelBtn" onclick="cancelScenarioSubsetJob()">Stop &amp; Kill</button>
+        </div>
+        <div class="mc-row u-hidden u-mt-7" id="subsetProgressRow">
+          <div class="progress-bar" title="Subset creation progress">
+            <div class="progress-fill running u-w-0" id="subsetProgressFill"></div>
+          </div>
+          <div class="progress-pct" id="subsetProgressPct">0%</div>
+        </div>
+        <div class="status-message u-status-top" id="subsetStatus"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     MONITOR PAGE
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="page" id="pageMonitor">
+  <div class="mon-layout">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        Simulation Runs
+        <span id="refreshInfo">auto-refresh 3 s</span>
+      </div>
+      <div id="runList"></div>
+    </div>
+    <div class="main-panel" id="mainContent">
+      <div class="empty">
+        <h2>No run selected</h2>
+        <p>Select a run from the sidebar to view its progress and logs.<br>
+        The list refreshes automatically while simulations are running.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     ANALYSIS PAGE
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="page" id="pageAnalysis">
+  <div class="cfg-wrap">
+
+    <!-- ─ Run Selection ─────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header" onclick="toggleSection(this)">
+        <span>Select Simulation Run</span><span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="anlRunRoot">Simulation Run Folder</label>
+          <div class="u-flex-gap-4">
+            <input type="text" id="anlRunRoot" placeholder="run/"
+                class="u-fill" oninput="onAnlRunRootInput()">
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="refreshAnlRuns()" title="Reload experiment list from this folder">
+              &#8635; Refresh
+            </button>
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="resetAnlRunRoot()" title="Reset to default run/ folder">
+              &#8962; Default
+            </button>
+          </div>
+          <div class="help-text">Defaults to the <code>run/</code> sub-folder of xAquaticRisk.
+            You can also type an absolute path (e.g.\ <code>D:\xAquatic_Experiments_Store\run</code>)
+            to load experiments stored elsewhere on disk.</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="anlExperiment">Experiment</label>
+            <select id="anlExperiment" onchange="onAnlExperimentChange()">
+              <option value="">Loading runs…</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="anlMcRun">Monte Carlo Run</label>
+            <select id="anlMcRun" onchange="onAnlMcRunChange()">
+              <option value="">Select experiment first…</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─ Scenario ──────────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header" onclick="toggleSection(this)">
+        <span>Scenario</span><span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="anlScenario">Landscape Scenario</label>
+            <select id="anlScenario" onchange="onAnlScenarioSelect()">
+              <option value="">Loading…</option>
+            </select>
+            <div class="help-text">The scenario folder to analyze. Reaches and geometries are taken from this scenario.</div>
+          </div>
+          <div class="form-group">
+            <label for="anlScenarioName">Default Settings Source</label>
+            <input type="text" id="anlScenarioName" list="anlScenarioNameList"
+                   placeholder="e.g. Muenster" oninput="onAnlScenarioNameInput()">
+            <datalist id="anlScenarioNameList">
+              <option value="Rummen"><option value="Muenster"><option value="Oudebeek">
+              <option value="Oudebeek-Beek7"><option value="Wetter_2"><option value="WetterfeldSlice"><option value="Muschenheim">
+              <option value="Bruchenbruecken"><option value="Funne"><option value="GKB">
+            </datalist>
+            <div class="help-text">Optional: match a known scenario (or parent scenario for slices) to auto-populate reach IDs and zoom dates below. Leave empty to use custom values.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─ Output Folder ─────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header" onclick="toggleSection(this)">
+        <span>Output</span><span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="anlOutputDir">Output Folder</label>
+          <input type="text" id="anlOutputDir"
+                 placeholder="Leave empty to use analysis_output/">
+          <div class="help-text">Parent folder for results. A sub-folder named
+            <code>{experiment}_{mc_run}__{YYYYMMDDHHMMSS}</code> is always created inside it.
+            Empty&nbsp;= <code>analysis_output/</code> inside xAquaticRisk.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─ Analysis Settings (collapsible) ──────────────────────────── -->
+    <div class="card">
+      <div class="card-header collapsed" onclick="toggleSection(this)">
+        <span>Analysis Settings</span><span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body collapsed">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="u-checkbox-label">
+              <input type="checkbox" id="anlRunPec" checked
+                     class="u-checkbox-ok">
+              Run Exposure Analysis (PECsw / PECsed)
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="u-checkbox-label">
+              <input type="checkbox" id="anlRunGuts" checked
+                     class="u-checkbox-ok">
+              Run Effect Analysis (GUTS survival / LP50)
+            </label>
+          </div>
+        </div>
+        <div class="form-group u-mt-3">
+          <label class="u-checkbox-label">
+            <input type="checkbox" id="anlExposedOnly"
+                   class="u-checkbox-warn">
+            Restrict to exposed stream segments only (PECsw&nbsp;&gt;&nbsp;0)
+          </label>
+        </div>
+        <div class="form-group u-mt-6">
+          <label for="anlExposureModel">Exposure Model</label>
+          <select id="anlExposureModel">
+            <option value="CascadeToxswa" selected>CascadeToxswa</option>
+            <option value="StepsRiverNetwork">StepsRiverNetwork</option>
+          </select>
+          <div class="help-text">Select which component's concentration outputs are used for
+            PECsw/PECsed and effect analysis. Choose <em>StepsRiverNetwork</em> when
+            CascadeToxswa was not run.</div>
+        </div>
+        <div class="section-heading u-heading-muted">Time Series Plots</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="anlReachSingle">Single-reach Reach IDs</label>
+            <input type="text" id="anlReachSingle"
+                   placeholder="e.g. 154  (comma-separated; empty = scenario default)">
+          </div>
+          <div class="form-group">
+            <label for="anlReachGroup">Group-plot Reach IDs</label>
+            <input type="text" id="anlReachGroup"
+                   placeholder="e.g. 772,575,149">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="anlZoomFrom">Plot Zoom Start</label>
+            <input type="text" id="anlZoomFrom" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group">
+            <label for="anlZoomTo">Plot Zoom End</label>
+            <input type="text" id="anlZoomTo" placeholder="YYYY-MM-DD">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─ Action bar ────────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-body u-card-body-compact">
+        <button type="button" class="btn btn-primary" id="btnRunAnalysis"
+                onclick="startAnalysis()">&#9654; Run Analysis</button>
+        <div class="loading" id="anlLoading">
+          <div class="spinner"></div>
+          <p class="u-loading-text">Starting analysis…</p>
+        </div>
+        <div class="status-message" id="anlStatus"></div>
+      </div>
+    </div>
+
+    <!-- ─ Results panel (shown after job started) ───────────────────── -->
+    <div id="anlResults" class="u-hidden">
+
+      <!-- Progress log -->
+      <div class="panel">
+        <div class="panel-head" id="anlProgressHead">Analysis Progress</div>
+        <div class="log-output u-log-max-320" id="anlLog">Waiting…</div>
+      </div>
+
+      <!-- PECsw percentile table -->
+      <div class="panel u-hidden" id="anlPecswTablePanel">
+        <div class="panel-head u-panel-head-between">
+          <span>PECsw Percentile Table&nbsp;<span class="u-note-xs">[ng/L] &mdash; rows: temporal percentiles, columns: spatial percentiles</span></span>
+          <button type="button" class="btn btn-outline btn-sm" onclick="toggleAnlTable()" id="btnTogglePecswTable">&#9660; hide</button>
+        </div>
+        <div id="anlPecswTableWrap" class="u-table-wrap">
+          <table id="anlPecswTable" class="anl-tbl"></table>
+        </div>
+      </div>
+
+      <!-- Output files -->
+      <div class="panel u-hidden" id="anlOutputPanel">
+        <div class="panel-head">Generated Files</div>
+        <div class="panel-body u-output-files" id="anlOutputFiles"></div>
+      </div>
+
+      <!-- Image gallery -->
+      <div id="anlGallery"></div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     EXPLORER PAGE
+     ══════════════════════════════════════════════════════════════════ -->
+<div class="page" id="pageExplorer">
+  <div class="expl-wrap">
+    <div class="card">
+      <div class="card-header" onclick="toggleSection(this)">
+        <span>Stream Map + PECsw Time Series</span><span class="toggle">&#9660;</span>
+      </div>
+      <div class="card-body">
+        <div class="expl-toolbar">
+          <div class="form-group u-form-group-mb0">
+            <label for="explRunSelect">Run / MC Selection</label>
+            <select id="explRunSelect"></select>
+          </div>
+          <div class="form-group u-form-group-mb0">
+            <label for="explResolution">Resolution</label>
+            <select id="explResolution">
+              <option value="auto" selected>Auto</option>
+              <option value="daily">Daily</option>
+              <option value="hourly">Hourly</option>
+            </select>
+          </div>
+          <div class="form-group u-form-group-mb0">
+            <label for="explTimeFrom">Time Start</label>
+            <input type="text" id="explTimeFrom" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group u-form-group-mb0">
+            <label for="explTimeTo">Time End</label>
+            <input type="text" id="explTimeTo" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="u-flex-gap-45-end">
+            <button class="btn btn-outline btn-sm" onclick="reloadExplorerData()">Reload</button>
+            <button class="btn btn-outline btn-sm" onclick="clearExplorerSelection()">Clear Selection</button>
+          </div>
+        </div>
+        <div class="expl-selection">
+          Selected reaches: <strong id="explSelectedCount">0</strong>
+          <span id="explMetaText" class="u-ml-8"></span>
+          <div class="expl-chip-list" id="explSelectedChips"></div>
+          <div class="expl-note">Click a segment to toggle selection. Hold Ctrl or Shift for additive selection. Hold Alt and drag for box-select.</div>
+        </div>
+        <div class="status-message u-status-top" id="explStatus"></div>
+      </div>
+    </div>
+
+    <div class="expl-grid">
+      <div class="panel expl-map-card">
+        <div class="panel-head">Stream Network</div>
+        <div class="panel-body u-panel-body-tight">
+          <div id="explMap" class="expl-map">
+            <div class="expl-map-hint">Alt + drag to select multiple segments</div>
+            <canvas id="explLabelCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">PECsw Time Series [ng/L]</div>
+        <div class="panel-body u-panel-body-tight">
+          <div id="explChart" class="expl-chart"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ══════════════════════════════════════════════════════════════════ -->
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// Global state
+// ═══════════════════════════════════════════════════════════════════
+let activeXrunPath = null;
+let activeXrunFilename = null;
+let templateParams = {};
+const scenarioExtentCache = new Map();
+const scenarioInspectCache = new Map();
+let subsetJobPollTimer = null;
+let activeSubsetJobId = null;
+let subsetMap = null;
+let subsetMapReady = false;
+let subsetReachGeoJSON = null;
+let subsetLastBounds = null;
+let subsetSelectedReachIds = new Set();
+let subsetIsBoxSelecting = false;
+let subsetBoxDiv = null;
+let subsetBoxStart = null;
+
+// Known param keys (for distinguishing "additional" ones)
+const knownParams = [
+  'Scenario/LandscapeScenario','Scenario/SimulationStart','Scenario/SimulationEnd',
+  'Control/ExperimentID','Control/NumberMC','Control/NumberParallelProcesses',
+  'PppUse/ApplicationRate','PppUse/ApplicationTimeWindow',
+  'Mitigation/InCropBuffer','Mitigation/TechnologyDriftReduction',
+  'Exposure/RautmannClass','Exposure/DepositionInputFile',
+  'EnvironmentalFate/RunStepsRiverNetwork','EnvironmentalFate/RunCascadeToxswa',
+  'EnvironmentalFate/MolarMass','EnvironmentalFate/SolubilityInWater',
+  'EnvironmentalFate/DT50sw','EnvironmentalFate/DT50sed',
+  'EnvironmentalFate/KOC','EnvironmentalFate/DiffusionCoefficient',
+  'EnvironmentalFate/SaturatedVapourPressure','EnvironmentalFate/MolarEnthalpyOfVaporization',
+  'EnvironmentalFate/MolarEnthalpyOfDissolution','EnvironmentalFate/ReferenceConcentrationForKOC',
+  'EnvironmentalFate/MolarActivationEnthalpyOfTransformationInWater',
+  'EnvironmentalFate/MolarActivationEnthalpyOfTransformationInSediment',
+  'EnvironmentalFate/FreundlichExponentInSedimentAndSuspendedParticles',
+  'EnvironmentalFate/CoefficientForLinearAdsorptionOnMacrophytes',
+  'EnvironmentalFate/ThresholdSW','EnvironmentalFate/ThresholdSediment',
+  'Effects/RunLGuts','Effects/NumberOfWarmUpYears','Effects/RecoveryPeriodYears',
+  'Effects/Species1','Effects/Species1DominantRateConstantSD','Effects/Species1ThresholdConcentrationSD',
+  'Effects/Species1KillingRateSD','Effects/Species1DominantRateConstantIT',
+  'Effects/Species1ThresholdDistributionIT','Effects/Species1WidthOfThresholdDistributionIT',
+  'Effects/Species2','Effects/Species2DominantRateConstantSD','Effects/Species2ThresholdConcentrationSD',
+  'Effects/Species2KillingRateSD','Effects/Species2DominantRateConstantIT',
+  'Effects/Species2ThresholdDistributionIT','Effects/Species2WidthOfThresholdDistributionIT',
+  'Effects/Species3','Effects/Species3DominantRateConstantSD','Effects/Species3ThresholdConcentrationSD',
+  'Effects/Species3KillingRateSD','Effects/Species3DominantRateConstantIT',
+  'Effects/Species3ThresholdDistributionIT','Effects/Species3WidthOfThresholdDistributionIT'
+];
+
+// Monitor state
+let selectedRun = null;
+let activeLogTab = "experiment.log";
+let autoScroll = true;
+let filterSev = "ALL";
+let refreshTimer = null;
+let monitorBuiltFor = null;   // run ID whose DOM skeleton is currently rendered
+let lastLogHtml = '';          // dedup: skip log DOM writes when nothing changed
+let warningDowngradeRules = [];
+const REFRESH_MS = 3000;
+
+// Explorer state
+let explRuns = [];
+let explMap = null;
+let explMapReady = false;
+let explSelectedReachIds = new Set();
+let explCurrentSelectionKey = null;
+let explCurrentRun = null;
+let explIsBoxSelecting = false;
+let explBoxDiv = null;
+let explBoxStart = null;
+let explReachGeoJSON = null;
+
+const UI_TABS = ['configure', 'monitor', 'landscape', 'analysis', 'explorer'];
+const UI_PROFILES = {
+  all: {
+    allowedTabs: UI_TABS,
+    defaultTab: 'configure',
+    titleTag: 'Control Panel',
+    pageTitle: 'xAquaticRisk — Control Panel',
+  },
+  prep: {
+    allowedTabs: ['configure', 'monitor', 'landscape'],
+    defaultTab: 'configure',
+    titleTag: 'Preparation & Execution',
+    pageTitle: 'xAquaticRisk — Preparation & Execution',
+  },
+  analysis: {
+    allowedTabs: ['analysis', 'explorer'],
+    defaultTab: 'analysis',
+    titleTag: 'Analysis & Exploration',
+    pageTitle: 'xAquaticRisk — Analysis & Exploration',
+  },
+};
+
+let uiProfileName = 'all';
+let uiAllowedTabs = new Set(UI_PROFILES.all.allowedTabs);
+
+function normalizeUiProfileName(raw) {
+  const name = String(raw || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(UI_PROFILES, name) ? name : 'all';
+}
+
+function getUiProfileSpec(name) {
+  return UI_PROFILES[normalizeUiProfileName(name)] || UI_PROFILES.all;
+}
+
+function uiTabAllowed(name) {
+  return uiAllowedTabs.has(name);
+}
+
+function configureUiProfile(profilePayload) {
+  uiProfileName = normalizeUiProfileName(profilePayload?.profile);
+  const spec = getUiProfileSpec(uiProfileName);
+  uiAllowedTabs = new Set(spec.allowedTabs);
+
+  for (const tabName of UI_TABS) {
+    const suffix = tabName.charAt(0).toUpperCase() + tabName.slice(1);
+    const tabEl = document.getElementById('tab' + suffix);
+    const pageEl = document.getElementById('page' + suffix);
+    const enabled = uiAllowedTabs.has(tabName);
+    if (tabEl) tabEl.classList.toggle('u-hidden', !enabled);
+    if (pageEl) pageEl.classList.toggle('u-hidden', !enabled);
+  }
+
+  const uiTag = document.getElementById('uiTag');
+  if (uiTag) uiTag.textContent = spec.titleTag;
+  document.title = spec.pageTitle;
+  return spec;
+}
+
+async function loadUiProfile() {
+  try {
+    const profile = await api('/api/ui/profile');
+    return configureUiProfile(profile || { profile: 'all' });
+  } catch (e) {
+    console.warn('Failed to load UI profile; falling back to all profile.', e);
+    return configureUiProfile({ profile: 'all' });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Tab switching
+// ═══════════════════════════════════════════════════════════════════
+function switchTab(name, force = false) {
+  if (!force && !uiTabAllowed(name)) return;
+  const suffix = name.charAt(0).toUpperCase() + name.slice(1);
+  const tabEl = document.getElementById('tab' + suffix);
+  const pageEl = document.getElementById('page' + suffix);
+  if (!tabEl || !pageEl) return;
+
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  tabEl.classList.add('active');
+  pageEl.classList.add('active');
+
+  // Start/stop monitor refresh
+  if (name === 'monitor') {
+    startMonitorRefresh();
+  } else {
+    stopMonitorRefresh();
+  }
+  // Refresh analysis run list whenever the Analysis tab is opened
+  if (name === 'analysis') {
+    loadAnlRuns();
+  }
+  if (name === 'explorer') {
+    ensureExplorerMap();
+    loadExplorerRuns();
+  }
+  if (name === 'landscape') {
+    ensureSubsetMap();
+    if (subsetMap) {
+      requestAnimationFrame(() => {
+        subsetMap.resize();
+        const b = subsetLastBounds;
+        if (Array.isArray(b) && b.length === 4 && b.every(Number.isFinite)) {
+          subsetMap.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 30, duration: 0 });
+        }
+      });
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Configure – section toggle
+// ═══════════════════════════════════════════════════════════════════
+function toggleSection(header) {
+  header.classList.toggle('collapsed');
+  header.nextElementSibling.classList.toggle('collapsed');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Configure – template & scenarios
+// ═══════════════════════════════════════════════════════════════════
+async function loadScenarios() {
+  try {
+    const res = await fetch('/api/scenarios');
+    const scenarios = await res.json();
+    const sel = document.getElementById('Scenario/LandscapeScenario');
+    const subsetSel = document.getElementById('subsetSourceScenario');
+    sel.innerHTML = '<option value="">Select a scenario…</option>';
+    if (subsetSel) subsetSel.innerHTML = '<option value="">Select a scenario…</option>';
+    scenarios.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.path; o.textContent = s.name;
+      sel.appendChild(o);
+      if (subsetSel) {
+        const clone = document.createElement('option');
+        clone.value = s.path;
+        clone.textContent = s.name;
+        subsetSel.appendChild(clone);
+      }
+    });
+  } catch(e) { console.error('loadScenarios', e); }
+}
+
+async function getScenarioExtent(scenarioPath) {
+  if (!scenarioPath) return null;
+  if (scenarioExtentCache.has(scenarioPath)) {
+    return scenarioExtentCache.get(scenarioPath);
+  }
+  const res = await fetch('/api/scenario-extent?path=' + encodeURIComponent(scenarioPath));
+  const data = await res.json();
+  scenarioExtentCache.set(scenarioPath, data);
+  return data;
+}
+
+async function applyScenarioExtentDefaults(scenarioPath, { fillStart = true, fillEnd = true, overwrite = false } = {}) {
+  if (!scenarioPath) return;
+  const data = await getScenarioExtent(scenarioPath);
+  const startEl = document.getElementById('Scenario/SimulationStart');
+  const endEl = document.getElementById('Scenario/SimulationEnd');
+
+  if (fillStart && data?.from_date && (overwrite || !startEl.value.trim())) {
+    startEl.value = data.from_date;
+  }
+  if (fillEnd && data?.to_date && (overwrite || !endEl.value.trim())) {
+    endEl.value = data.to_date;
+  }
+}
+
+async function onScenarioChange(scenarioPath, overwrite = false) {
+  if (!scenarioPath) return;
+  try {
+    await applyScenarioExtentDefaults(scenarioPath, { overwrite });
+    const subsetSel = document.getElementById('subsetSourceScenario');
+    if (subsetSel && !subsetSel.value) {
+      subsetSel.value = scenarioPath;
+      await inspectSubsetScenario();
+    }
+  } catch(e) { console.error('onScenarioChange', e); }
+}
+
+function showSubsetStatus(msg, type) {
+  const el = document.getElementById('subsetStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'status-message show ' + type;
+  if (type === 'success') {
+    setTimeout(() => { el.className = 'status-message'; }, 5000);
+  }
+}
+
+function renderSubsetInspection(data) {
+  const project = data?.project_extent || {};
+  const hdf = data?.hdf_extent || {};
+  const effective = data?.effective_extent || {};
+  const warnings = data?.warnings || [];
+  const files = data?.files || {};
+  
+  document.getElementById('subsetProjectExtent').textContent = (project.from_date && project.to_date)
+    ? `${project.from_date} → ${project.to_date}`
+    : (files.project ? 'Unavailable' : '⚠ Missing');
+  document.getElementById('subsetHdfExtent').textContent = (hdf.from_datetime && hdf.to_datetime)
+    ? `${hdf.from_datetime} → ${hdf.to_datetime}`
+    : (files.hydro_hdf ? 'Unavailable' : '⚠ HDF5 Missing');
+  document.getElementById('subsetEffectiveExtent').textContent = (effective.from_date && effective.to_date)
+    ? `${effective.from_date} → ${effective.to_date}`
+    : 'Unavailable';
+  document.getElementById('subsetHydroStats').textContent = `${hdf.reach_count || 0} reaches / ${data?.files?.timeseries_csv_count || 0} CSVs`;
+
+  const summaryBits = [];
+  if (data?.scenario_path) summaryBits.push(`Source: ${data.scenario_path}`);
+  if (effective.from_date && effective.to_date) summaryBits.push(`Valid slice window: ${effective.from_date} to ${effective.to_date}`);
+  if (!effective.from_date || !effective.to_date) summaryBits.push('(Missing critical files: inspection incomplete)');
+  document.getElementById('subsetSummary').textContent = summaryBits.join(' | ') || 'No scenario inspection data available.';
+
+  const warningsEl = document.getElementById('subsetWarnings');
+  warningsEl.innerHTML = warnings.map(w => `<li>${escHtml(w)}</li>`).join('');
+}
+
+async function inspectSubsetScenario(force = false) {
+  const scenarioPath = document.getElementById('subsetSourceScenario')?.value || '';
+  if (!scenarioPath) {
+    showSubsetStatus('Select a source scenario first.', 'error');
+    return null;
+  }
+  showSubsetStatus('Inspecting scenario…', 'note');
+  if (!force && scenarioInspectCache.has(scenarioPath)) {
+    const cached = scenarioInspectCache.get(scenarioPath);
+    renderSubsetInspection(cached);
+    return cached;
+  }
+  try {
+    const data = await api('/api/scenario-inspect?path=' + encodeURIComponent(scenarioPath));
+    scenarioInspectCache.set(scenarioPath, data);
+    renderSubsetInspection(data);
+    showSubsetStatus('Scenario inspected.', data.warnings?.length ? 'warning' : 'success');
+    return data;
+  } catch (e) {
+    showSubsetStatus('Inspection failed: ' + e.message, 'error');
+    return null;
+  }
+}
+
+async function inspectAndZoomSubsetScenario(forceInspect = false) {
+  const data = await inspectSubsetScenario(forceInspect);
+  if (!data) return;
+  await loadSubsetScenarioGeometry();
+}
+
+function fillSubsetDatesFromEffective() {
+  const scenarioPath = document.getElementById('subsetSourceScenario')?.value || '';
+  const data = scenarioInspectCache.get(scenarioPath);
+  if (!data?.effective_extent?.from_date || !data?.effective_extent?.to_date) {
+    showSubsetStatus('Inspect a scenario first to load the effective date window.', 'error');
+    return;
+  }
+  document.getElementById('subsetStartDate').value = data.effective_extent.from_date;
+  document.getElementById('subsetEndDate').value = data.effective_extent.to_date;
+}
+
+async function onSubsetSourceChange() {
+  const scenarioPath = document.getElementById('subsetSourceScenario')?.value || '';
+  if (!scenarioPath) return;
+  await inspectAndZoomSubsetScenario(false);
+}
+
+function useCurrentScenarioForSubset() {
+  const current = document.getElementById('Scenario/LandscapeScenario')?.value || '';
+  const subsetSel = document.getElementById('subsetSourceScenario');
+  if (!current || !subsetSel) {
+    showSubsetStatus('Select a landscape scenario in the parameterisation section first.', 'error');
+    return;
+  }
+  subsetSel.value = current;
+  onSubsetSourceChange();
+}
+
+function ensureSubsetMap() {
+  if (subsetMap || typeof maplibregl === 'undefined') {
+    if (!subsetMap && typeof maplibregl === 'undefined') {
+      showSubsetStatus('Map library failed to load (MapLibre).', 'error');
+    }
+    return;
+  }
+  subsetMap = new maplibregl.Map({
+    container: 'subsetMap',
+    style: {
+      version: 8,
+      sources: {
+        'subset-esri-world-imagery': {
+          type: 'raster',
+          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        }
+      },
+      layers: [{ id: 'subset-esri-world-imagery', type: 'raster', source: 'subset-esri-world-imagery' }]
+    },
+    center: [8, 51],
+    zoom: 5,
+    attributionControl: false,
+  });
+  subsetMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+  subsetMap.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  subsetMap.on('load', () => {
+    subsetMapReady = true;
+    if (!subsetMap.getSource('subset-reaches')) {
+      subsetMap.addSource('subset-reaches', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      subsetMap.addSource('subset-selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      subsetMap.addLayer({ id: 'subset-reach-line', type: 'line', source: 'subset-reaches', paint: { 'line-color': '#2f7de1', 'line-width': 1.6, 'line-opacity': 0.92 } });
+      subsetMap.addLayer({ id: 'subset-reach-selected', type: 'line', source: 'subset-selected', paint: { 'line-color': '#8fd3ff', 'line-width': 3.2, 'line-opacity': 1.0 } });
+      subsetMap.on('click', 'subset-reach-line', onSubsetMapClick);
+      setupSubsetBoxSelection();
+    }
+  });
+}
+
+function updateSubsetSelectionUi() {
+  const ids = Array.from(subsetSelectedReachIds);
+  const countEl = document.getElementById('subsetSelectedCount');
+  const chips = document.getElementById('subsetSelectedChips');
+  if (countEl) countEl.textContent = String(ids.length);
+  if (chips) {
+    chips.innerHTML = ids.slice(0, 80).map(id => `<span class="subset-chip">${escHtml(id)}</span>`).join('');
+  }
+}
+
+function setSubsetSelectionSource() {
+  if (!subsetMapReady || !subsetMap) return;
+  const src = subsetMap.getSource('subset-reaches');
+  const selSrc = subsetMap.getSource('subset-selected');
+  if (!src || !selSrc) return;
+  const data = subsetReachGeoJSON || { type: 'FeatureCollection', features: [] };
+  const selectedFeatures = (data.features || []).filter(f => {
+    const rid = f?.properties?.reach_id;
+    return rid && subsetSelectedReachIds.has(String(rid));
+  });
+  selSrc.setData({ type: 'FeatureCollection', features: selectedFeatures });
+}
+
+function onSubsetMapClick(event) {
+  const feature = event?.features?.[0];
+  const rid = feature?.properties?.reach_id;
+  if (!rid) return;
+  const id = String(rid);
+  const additive = !!(event.originalEvent?.ctrlKey || event.originalEvent?.shiftKey);
+  if (!additive) subsetSelectedReachIds.clear();
+  if (subsetSelectedReachIds.has(id)) subsetSelectedReachIds.delete(id);
+  else subsetSelectedReachIds.add(id);
+  setSubsetSelectionSource();
+  updateSubsetSelectionUi();
+}
+
+function setupSubsetBoxSelection() {
+  const canvas = subsetMap?.getCanvasContainer?.();
+  if (!canvas) return;
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (!e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    subsetIsBoxSelecting = true;
+    subsetBoxStart = [e.clientX, e.clientY];
+    subsetMap.dragPan.disable();
+    subsetBoxDiv = document.createElement('div');
+    subsetBoxDiv.className = 'expl-box';
+    canvas.appendChild(subsetBoxDiv);
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!subsetIsBoxSelecting || !subsetBoxDiv || !subsetBoxStart) return;
+    const minX = Math.min(subsetBoxStart[0], e.clientX);
+    const minY = Math.min(subsetBoxStart[1], e.clientY);
+    const maxX = Math.max(subsetBoxStart[0], e.clientX);
+    const maxY = Math.max(subsetBoxStart[1], e.clientY);
+    const rect = canvas.getBoundingClientRect();
+    subsetBoxDiv.style.left = (minX - rect.left) + 'px';
+    subsetBoxDiv.style.top = (minY - rect.top) + 'px';
+    subsetBoxDiv.style.width = (maxX - minX) + 'px';
+    subsetBoxDiv.style.height = (maxY - minY) + 'px';
+  });
+
+  const finish = (e) => {
+    if (!subsetIsBoxSelecting) return;
+    const additive = !!(e.ctrlKey || e.shiftKey);
+    const rect = canvas.getBoundingClientRect();
+    const start = [subsetBoxStart[0] - rect.left, subsetBoxStart[1] - rect.top];
+    const end = [e.clientX - rect.left, e.clientY - rect.top];
+    const min = [Math.min(start[0], end[0]), Math.min(start[1], end[1])];
+    const max = [Math.max(start[0], end[0]), Math.max(start[1], end[1])];
+    if ((max[0] - min[0]) > 6 && (max[1] - min[1]) > 6) {
+      const feats = subsetMap.queryRenderedFeatures([min, max], { layers: ['subset-reach-line'] });
+      if (!additive) subsetSelectedReachIds.clear();
+      for (const f of feats) {
+        const rid = f?.properties?.reach_id;
+        if (rid) subsetSelectedReachIds.add(String(rid));
+      }
+      setSubsetSelectionSource();
+      updateSubsetSelectionUi();
+    }
+    if (subsetBoxDiv?.parentNode) subsetBoxDiv.parentNode.removeChild(subsetBoxDiv);
+    subsetBoxDiv = null;
+    subsetBoxStart = null;
+    subsetIsBoxSelecting = false;
+    subsetMap.dragPan.enable();
+  };
+
+  canvas.addEventListener('mouseup', finish);
+  canvas.addEventListener('mouseleave', finish);
+}
+
+function clearSubsetSelection() {
+  subsetSelectedReachIds.clear();
+  setSubsetSelectionSource();
+  updateSubsetSelectionUi();
+}
+
+function selectAllSubsetReaches() {
+  const data = subsetReachGeoJSON || { features: [] };
+  subsetSelectedReachIds = new Set((data.features || []).map(f => String(f?.properties?.reach_id || '')).filter(Boolean));
+  setSubsetSelectionSource();
+  updateSubsetSelectionUi();
+}
+
+async function loadSubsetScenarioGeometry() {
+  ensureSubsetMap();
+  const scenarioPath = document.getElementById('subsetSourceScenario')?.value || '';
+  if (!scenarioPath) return;
+  try {
+    if (subsetMap && !subsetMapReady) {
+      await new Promise((resolve) => subsetMap.once('load', resolve));
+    }
+    const res = await api('/api/scenario-geometry?path=' + encodeURIComponent(scenarioPath));
+    subsetReachGeoJSON = res.geojson || { type: 'FeatureCollection', features: [] };
+    subsetSelectedReachIds = new Set((subsetReachGeoJSON.features || []).map(f => String(f?.properties?.reach_id || '')).filter(Boolean));
+    if (subsetMapReady && subsetMap?.getSource('subset-reaches')) {
+      subsetMap.getSource('subset-reaches').setData(subsetReachGeoJSON);
+      setSubsetSelectionSource();
+      const b = res.meta?.bounds || [];
+      if (b.length === 4 && b.every(Number.isFinite)) {
+        subsetLastBounds = b;
+        subsetMap.resize();
+        subsetMap.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 30, duration: 500 });
+      }
+    }
+    const meta = document.getElementById('subsetMapMeta');
+    if (meta) {
+      meta.textContent = `Features: ${res.meta?.feature_count || 0} | ID field: ${res.meta?.reach_id_field || 'unknown'}`;
+    }
+    updateSubsetSelectionUi();
+  } catch (e) {
+    showSubsetStatus('Failed to load scenario map: ' + e.message, 'error');
+  }
+}
+
+function setSubsetCreateBusy(isBusy) {
+  const btn = document.getElementById('subsetCreateBtn');
+  const cancelBtn = document.getElementById('subsetCancelBtn');
+  if (btn) btn.disabled = !!isBusy;
+  if (cancelBtn) {
+    cancelBtn.style.display = isBusy ? 'inline-flex' : 'none';
+    cancelBtn.disabled = !isBusy;
+  }
+}
+
+function setSubsetProgress(pct, state = 'running') {
+  const row = document.getElementById('subsetProgressRow');
+  const fill = document.getElementById('subsetProgressFill');
+  const label = document.getElementById('subsetProgressPct');
+  if (!row || !fill || !label) return;
+  const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+  row.style.display = 'flex';
+  fill.style.width = clamped + '%';
+  fill.className = 'progress-fill ' + (state || 'running');
+  label.textContent = Math.round(clamped) + '%';
+}
+
+function stopSubsetJobPolling() {
+  if (subsetJobPollTimer) {
+    clearInterval(subsetJobPollTimer);
+    subsetJobPollTimer = null;
+  }
+  activeSubsetJobId = null;
+}
+
+async function cancelScenarioSubsetJob() {
+  if (!activeSubsetJobId) {
+    showSubsetStatus('No active subset job to cancel.', 'warning');
+    return;
+  }
+  try {
+    const btn = document.getElementById('subsetCancelBtn');
+    if (btn) btn.disabled = true;
+    await api('/api/scenario-subset/cancel/' + encodeURIComponent(activeSubsetJobId), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+    showSubsetStatus('Stop requested. Terminating worker processes and cleaning up…', 'warning');
+  } catch (e) {
+    showSubsetStatus('Failed to request cancellation: ' + e.message, 'error');
+    const btn = document.getElementById('subsetCancelBtn');
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function applyCreatedSubset(res) {
+  const previousSubsetSource = document.getElementById('subsetSourceScenario')?.value || '';
+  document.getElementById('Scenario/LandscapeScenario').value = res.scenario_path;
+  document.getElementById('Scenario/SimulationStart').value = res.simulation_start;
+  document.getElementById('Scenario/SimulationEnd').value = res.simulation_end;
+  scenarioInspectCache.delete(res.scenario_path);
+  await loadScenarios();
+  document.getElementById('Scenario/LandscapeScenario').value = res.scenario_path;
+  const subsetSourceEl = document.getElementById('subsetSourceScenario');
+  if (subsetSourceEl) {
+    // Keep the user's chosen source scenario stable across runs instead of
+    // silently switching to the newly created subset scenario.
+    subsetSourceEl.value = previousSubsetSource || res.scenario_path;
+  }
+  await inspectAndZoomSubsetScenario(true);
+  const warnText = (res.warnings || []).join(' ');
+  showSubsetStatus(
+    warnText
+      ? `Created subset scenario ${res.scenario_path}. ${warnText}`
+      : `Created subset scenario ${res.scenario_path}. Parameterisation fields were updated to the new scenario.`,
+    (res.warnings || []).length ? 'warning' : 'success'
+  );
+  showCfgStatus(`Parameterisation updated to ${res.scenario_path}`, 'success');
+}
+
+async function pollSubsetJob(jobId) {
+  activeSubsetJobId = jobId;
+  setSubsetCreateBusy(true);
+  setSubsetProgress(1, 'running');
+  const tick = async () => {
+    try {
+      const job = await api('/api/scenario-subset/status/' + encodeURIComponent(jobId));
+      const pct = Number(job.progress_pct || 0);
+      if (job.running) {
+        setSubsetProgress(pct, 'running');
+        if (job.message) showSubsetStatus(job.message, 'note');
+        if (job.cancel_requested) showSubsetStatus('Cancellation requested. Cleaning up…', 'warning');
+        return;
+      }
+      if (job.cancelled) {
+        setSubsetProgress(Math.max(pct, 1), 'warning');
+        showSubsetStatus(job.message || 'Subset creation was cancelled.', 'warning');
+        stopSubsetJobPolling();
+        setSubsetCreateBusy(false);
+        return;
+      }
+      if (job.error) {
+        setSubsetProgress(Math.max(pct, 1), 'error');
+        showSubsetStatus('Subset creation failed: ' + job.error, 'error');
+        stopSubsetJobPolling();
+        setSubsetCreateBusy(false);
+        return;
+      }
+      setSubsetProgress(100, 'finished');
+      stopSubsetJobPolling();
+      setSubsetCreateBusy(false);
+      if (job.result) {
+        await applyCreatedSubset(job.result);
+      } else {
+        showSubsetStatus('Subset job finished without result payload.', 'warning');
+      }
+    } catch (e) {
+      showSubsetStatus('Subset progress check failed: ' + e.message, 'error');
+      stopSubsetJobPolling();
+      setSubsetCreateBusy(false);
+    }
+  };
+  await tick();
+  subsetJobPollTimer = setInterval(tick, 1000);
+}
+
+async function createScenarioSubset() {
+  if (activeSubsetJobId) {
+    showSubsetStatus('A subset creation job is already running.', 'warning');
+    return;
+  }
+  const source_scenario = document.getElementById('subsetSourceScenario')?.value || '';
+  const target_name = document.getElementById('subsetTargetName')?.value.trim() || '';
+  const subset_start = document.getElementById('subsetStartDate')?.value.trim() || '';
+  const subset_end = document.getElementById('subsetEndDate')?.value.trim() || '';
+  if (!source_scenario || !target_name || !subset_start || !subset_end) {
+    showSubsetStatus('source scenario, target name, subset start, and subset end are required.', 'error');
+    return;
+  }
+  try {
+    const selected_reaches = Array.from(subsetSelectedReachIds);
+    showSubsetStatus(
+      `Starting subset creation job... Source: ${source_scenario} | Selected reaches: ${selected_reaches.length}`,
+      'note'
+    );
+    const max_lulc_distance = parseInt(document.getElementById('maxLulcDistance')?.value || '100', 10);
+    const max_number_cores_raw = parseInt(document.getElementById('maxNumberCores')?.value || '0', 10);
+    const max_number_cores = Number.isFinite(max_number_cores_raw) && max_number_cores_raw > 0 ? max_number_cores_raw : null;
+    const payload = { source_scenario, target_name, subset_start, subset_end, selected_reaches, max_lulc_distance, max_number_cores };
+    let res;
+    try {
+      res = await api('/api/scenario-subset/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      const msg = String(e?.message || e || '');
+      if (msg.includes('Unknown endpoint: /api/scenario-subset/start') || msg.includes('(404)')) {
+        // Backward compatibility when server process is still on pre-progress route set.
+        setSubsetCreateBusy(true);
+        setSubsetProgress(10, 'running');
+        showSubsetStatus('Server does not expose async progress endpoint yet; running in compatibility mode.', 'warning');
+        const syncRes = await api('/api/scenario-subset', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        setSubsetProgress(100, 'finished');
+        await applyCreatedSubset(syncRes);
+        setSubsetCreateBusy(false);
+        return;
+      }
+      throw e;
+    }
+    if (!res.job_id) {
+      throw new Error('Server did not return a subset job id.');
+    }
+    await pollSubsetJob(res.job_id);
+  } catch (e) {
+    showSubsetStatus('Subset creation failed: ' + e.message, 'error');
+    setSubsetCreateBusy(false);
+  }
+}
+
+function initializeScenarioDateAutofill() {
+  const scenarioEl = document.getElementById('Scenario/LandscapeScenario');
+  const startEl = document.getElementById('Scenario/SimulationStart');
+  const endEl = document.getElementById('Scenario/SimulationEnd');
+
+  const restoreDefault = async (field) => {
+    const scenarioPath = scenarioEl.value;
+    if (!scenarioPath) return;
+    try {
+      await applyScenarioExtentDefaults(scenarioPath, {
+        fillStart: field === 'start',
+        fillEnd: field === 'end'
+      });
+    } catch (e) {
+      console.error('restoreScenarioDateDefault', e);
+    }
+  };
+
+  startEl.addEventListener('input', () => {
+    if (!startEl.value.trim()) {
+      restoreDefault('start');
+    }
+  });
+
+  endEl.addEventListener('input', () => {
+    if (!endEl.value.trim()) {
+      restoreDefault('end');
+    }
+  });
+}
+
+async function loadTemplate() {
+  try {
+    const res = await fetch('/api/template');
+    templateParams = await res.json();
+
+    for (const [key, info] of Object.entries(templateParams)) {
+      const el = document.getElementById(key);
+      if (el) el.value = info.value || '';
+    }
+
+    // Additional params
+    const box = document.getElementById('additionalParams');
+    const card = document.getElementById('additionalParamsCard');
+    box.innerHTML = '';
+    let extra = false;
+    for (const [key, info] of Object.entries(templateParams)) {
+      if (knownParams.includes(key)) continue;
+      extra = true;
+      const g = document.createElement('div'); g.className = 'form-group';
+      const l = document.createElement('label'); l.htmlFor = key; l.textContent = info.tag || key;
+      const inp = document.createElement('input'); inp.type = 'text'; inp.id = key; inp.name = key; inp.value = info.value || '';
+      g.appendChild(l); g.appendChild(inp);
+      if (info.description) { const h = document.createElement('div'); h.className = 'help-text'; h.textContent = info.description; g.appendChild(h); }
+      box.appendChild(g);
+    }
+    card.style.display = extra ? 'block' : 'none';
+    showCfgStatus('Template loaded', 'success');
+  } catch(e) {
+    showCfgStatus('Error loading template: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Configure – form data helpers
+// ═══════════════════════════════════════════════════════════════════
+function getFormData() {
+  const params = {};
+  for (const key of Object.keys(templateParams)) {
+    const el = document.getElementById(key);
+    if (el && el.value) params[key] = el.value;
+  }
+  return params;
+}
+
+function showCfgStatus(msg, type) {
+  const el = document.getElementById('cfgStatus');
+  el.textContent = msg;
+  el.className = 'status-message show ' + type;
+  if (type === 'success') setTimeout(() => { el.className = 'status-message'; }, 4000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Configure – save / run
+// ═══════════════════════════════════════════════════════════════════
+async function saveConfiguration() {
+  const params = getFormData();
+  const body = { parameters: params };
+  if (activeXrunPath && activeXrunFilename) {
+    body.path = activeXrunPath;
+    body.filename = activeXrunFilename;
+  }
+  try {
+    const res = await fetch('/api/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const r = await res.json();
+    showCfgStatus(r.status === 'success' ? r.message : r.message, r.status === 'success' ? 'success' : 'error');
+  } catch(e) { showCfgStatus('Error: ' + e.message, 'error'); }
+}
+
+document.getElementById('paramForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const params = getFormData();
+  if (!params['Scenario/LandscapeScenario']) { showCfgStatus('Please select a scenario', 'error'); return; }
+  document.getElementById('loading').classList.add('show');
+  try {
+    const res = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(params) });
+    const r = await res.json();
+    document.getElementById('loading').classList.remove('show');
+    if (r.status === 'success') {
+      showCfgStatus(r.message, 'success');
+      // Auto-switch to monitor tab after a short delay
+      setTimeout(() => {
+        // Pre-select the experiment ID as the run to watch
+        selectedRun = r.experiment_id || null;
+        switchTab('monitor');
+      }, 1200);
+    } else {
+      showCfgStatus(r.message, 'error');
+    }
+  } catch(e) {
+    document.getElementById('loading').classList.remove('show');
+    showCfgStatus('Error: ' + e.message, 'error');
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Configure – parameterisation file operations
+// ═══════════════════════════════════════════════════════════════════
+async function loadXrunFiles() {
+  const path = document.getElementById('xrunPath').value.trim();
+  if (!path) { showCfgStatus('Enter a directory path first', 'error'); return; }
+  try {
+    const res = await fetch('/api/xrun-files', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path }) });
+    const r = await res.json();
+    if (r.status === 'success') {
+      const sel = document.getElementById('xrunSelect');
+      sel.innerHTML = '<option value="">Select a parameterisation file…</option>';
+      (r.files || []).forEach(f => {
+        const o = document.createElement('option');
+        o.value = f.name;
+        const ts = f.modified ? ` (${f.modified})` : '';
+        o.textContent = f.name + ts;
+        sel.appendChild(o);
+      });
+      showCfgStatus(`Found ${r.count} parameterisation file(s)`, 'success');
+    } else { showCfgStatus(r.message, 'error'); }
+  } catch(e) { showCfgStatus('Error: ' + e.message, 'error'); }
+}
+
+async function openXrunFile() {
+  const filename = document.getElementById('xrunSelect').value;
+  const path = document.getElementById('xrunPath').value.trim();
+  if (!filename || !path) { showCfgStatus('Select a parameterisation file first', 'error'); return; }
+  try {
+    const res = await fetch('/api/open-xrun', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename, path }) });
+    const r = await res.json();
+    if (r.status === 'success') {
+      for (const [k,v] of Object.entries(r.parameters)) { const el = document.getElementById(k); if (el) el.value = v; }
+      const scenarioVal = r.parameters['Scenario/LandscapeScenario'];
+      if (scenarioVal) {
+        const subsetSel = document.getElementById('subsetSourceScenario');
+        if (subsetSel) subsetSel.value = scenarioVal;
+        onScenarioChange(scenarioVal);
+      }
+      activeXrunPath = path;
+      activeXrunFilename = filename;
+      showCfgStatus(`Loaded: ${filename}`, 'success');
+    } else { showCfgStatus(r.message, 'error'); }
+  } catch(e) { showCfgStatus('Error: ' + e.message, 'error'); }
+}
+
+async function saveAsXrun() {
+  const filename = document.getElementById('saveAsName').value;
+  const path = document.getElementById('xrunPath').value.trim();
+  if (!filename || !path) { showCfgStatus('Enter a filename and path', 'error'); return; }
+  try {
+    const res = await fetch('/api/save-as', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filename, path, parameters: getFormData() }) });
+    const r = await res.json();
+    if (r.status === 'success') {
+      showCfgStatus(r.message, 'success');
+      document.getElementById('saveAsName').value = r.filename;
+      activeXrunPath = path; activeXrunFilename = r.filename;
+      loadXrunFiles();
+    } else { showCfgStatus(r.message, 'error'); }
+  } catch(e) { showCfgStatus('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – API helper
+// ═══════════════════════════════════════════════════════════════════
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.text();
+  try {
+    const data = JSON.parse(body);
+    if (!res.ok) {
+      const msg = data?.message || `HTTP ${res.status}`;
+      throw new Error(`${msg} (${res.status})`);
+    }
+    return data;
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      const head = body.slice(0, 80).replace(/\s+/g, ' ');
+      throw new Error(`Expected JSON from ${path}, got: ${head}`);
+    }
+    throw e;
+  }
+}
+
+async function loadWarningDowngradeRules() {
+  try {
+    const d = await api('/api/log-warning-downgrades');
+    warningDowngradeRules = d.rules || [];
+  } catch (e) {
+    warningDowngradeRules = [];
+  }
+}
+
+function renderWarningDowngradeRules() {
+  const box = document.getElementById('warnDowngradeList');
+  if (!box) return;
+  if (!warningDowngradeRules.length) {
+    box.innerHTML = '<div class="u-warn-rule-empty">No warning downgrades configured.</div>';
+    return;
+  }
+  box.innerHTML = warningDowngradeRules.map(r =>
+    `<div class="u-warn-rule-row">` +
+    `<span class="u-warn-rule-id">${escHtml(r.id)}</span> — ${escHtml(r.description)}</div>`
+  ).join('');
+}
+
+function statusLabel(s) {
+  return {running:'Running',finished:'Finished',warning:'Warnings',error:'Errors',initializing:'Starting',unknown:'Unknown'}[s]||s;
+}
+function escHtml(s) {
+  const text = (s === null || s === undefined) ? '' : String(s);
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – sidebar
+// ═══════════════════════════════════════════════════════════════════
+async function loadRuns() {
+  try {
+    const runs = await api('/api/runs');
+    const el = document.getElementById('runList');
+    el.innerHTML = runs.map(r => `
+      <div class="run-card ${selectedRun===r.id?'active':''}" onclick="selectRun('${r.id}')">
+        <div class="name"><span class="status-dot status-${r.status}"></span>${escHtml(r.id)}</div>
+        <div class="meta">
+          <span>${statusLabel(r.status)}</span>
+          <span>MC ${r.mc_finished}/${r.mc_total||'?'}</span>
+          ${r.elapsed?`<span>${escHtml(r.elapsed)}</span>`:''}
+        </div>
+      </div>`).join('');
+  } catch(e) { console.error('loadRuns', e); }
+}
+
+async function selectRun(id) {
+  selectedRun = id;
+  monitorBuiltFor = null;  // force full rebuild when user picks a new run
+  lastLogHtml = '';
+  await loadRuns();
+  await loadDetail();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – detail view  (incremental update strategy)
+//
+//  • First render (or run change) → buildDetailFull()  sets innerHTML
+//  • Subsequent ticks             → updateDetailInPlace()  patches DOM
+// ═══════════════════════════════════════════════════════════════════
+async function loadDetail() {
+  if (!selectedRun) return;
+  const d = await api(`/api/runs/${selectedRun}`);
+  const main = document.getElementById('mainContent');
+  if (!d || d.error) { main.innerHTML = '<div class="empty"><h2>Run not found</h2></div>'; monitorBuiltFor = null; return; }
+
+  if (monitorBuiltFor === selectedRun) {
+    updateDetailInPlace(d);
+  } else {
+    buildDetailFull(d);
+    monitorBuiltFor = selectedRun;
+  }
+  await loadLog();
+}
+
+/* ── Full build (once per run selection) ─────────────────────────── */
+function buildDetailFull(d) {
+  const logTabs = _logTabList(d);
+  if (!logTabs.includes(activeLogTab)) activeLogTab = logTabs[0];
+
+  let h = '';
+
+  // Overview cards – each value has its own id
+  h += `<div class="overview-grid">
+    <div class="stat-card"><div class="label">Status</div><div class="value" id="ov-status"></div></div>
+    <div class="stat-card"><div class="label">Elapsed</div><div class="value info" id="ov-elapsed"></div></div>
+    <div class="stat-card"><div class="label">MC Runs</div><div class="value info" id="ov-mc"></div></div>
+    <div class="stat-card"><div class="label">Errors</div><div class="value" id="ov-err"></div></div>
+    <div class="stat-card"><div class="label">Warnings</div><div class="value" id="ov-warn"></div></div>
+  </div>`;
+
+  // Action buttons bar
+  h += `<div id="action-bar" class="u-action-bar">
+    <button class="btn btn-danger btn-sm u-hidden" id="btn-stop" onclick="stopRun()">&#9632; Stop</button>
+    <button class="btn btn-danger btn-sm" id="btn-delete" onclick="deleteRun()">&#128465; Delete Run</button>
+  </div>`;
+
+  // MC progress container
+  h += '<div class="panel"><div class="panel-head">Monte Carlo Progress</div><div class="panel-body" id="mc-progress"></div></div>';
+
+  // Component pipeline container
+  h += '<div class="panel"><div class="panel-head" id="comp-head">Component Pipeline</div><div class="panel-body"><div class="comp-grid" id="comp-grid"></div></div></div>';
+
+  // Log viewer (skeleton)
+  h += `<div class="panel">
+    <div class="panel-head">Log Output</div>
+    <div class="log-tabs" id="logTabs"></div>
+    <div class="log-controls">
+      <label><input type="checkbox" id="chkAutoScroll" ${autoScroll?'checked':''} onchange="autoScroll=this.checked"> Auto-scroll</label>
+      <label>Filter:
+        <select id="selFilter" onchange="filterSev=this.value;loadLog()">
+          <option value="ALL" ${filterSev==='ALL'?'selected':''}>All</option>
+          <option value="ERROR" ${filterSev==='ERROR'?'selected':''}>Errors</option>
+          <option value="WARN" ${filterSev==='WARN'?'selected':''}>Warnings</option>
+          <option value="NOTE" ${filterSev==='NOTE'?'selected':''}>Notes</option>
+          <option value="OK" ${filterSev==='OK'?'selected':''}>OK</option>
+          <option value="INFO" ${filterSev==='INFO'?'selected':''}>Info</option>
+        </select>
+      </label>
+      <details class="u-details-right">
+        <summary class="u-details-summary">WARN downgraded to NOTE</summary>
+        <div id="warnDowngradeList" class="u-details-body"></div>
+      </details>
+    </div>
+    <div class="log-output" id="logOutput">Loading…</div>
+  </div>`;
+
+  // Parameters table
+  h += '<div id="params-panel"></div>';
+
+  document.getElementById('mainContent').innerHTML = h;
+  renderWarningDowngradeRules();
+
+  // Fill in the data for the first time
+  updateDetailInPlace(d);
+}
+
+/* ── In-place patch (every refresh tick) ─────────────────────────── */
+function updateDetailInPlace(d) {
+  // Overview cards
+  const ovStatus = document.getElementById('ov-status');
+  if (ovStatus) {
+    ovStatus.textContent = statusLabel(d.status);
+    ovStatus.className = 'value ' + (d.status==='finished'?'ok':d.status==='error'?'err':d.status==='warning'?'warn':'info');
+  }
+  _txt('ov-elapsed', d.elapsed || '—');
+  _txt('ov-mc', d.mc_runs.length);
+  const ovErr = document.getElementById('ov-err');
+  if (ovErr) { ovErr.textContent = d.severity_counts.ERROR; ovErr.className = 'value ' + (d.severity_counts.ERROR ? 'err' : 'ok'); }
+  const ovWarn = document.getElementById('ov-warn');
+  if (ovWarn) { ovWarn.textContent = d.severity_counts.WARN; ovWarn.className = 'value ' + (d.severity_counts.WARN ? 'warn' : 'ok'); }
+
+  // Stop button visibility (shown when abortable or run appears active)
+  const stopBtn = document.getElementById('btn-stop');
+  if (stopBtn) {
+    const active = d.abortable || d.status === 'running' || d.status === 'initializing';
+    stopBtn.style.display = active ? '' : 'none';
+  }
+
+  // MC progress bars
+  const mcBox = document.getElementById('mc-progress');
+  if (mcBox) {
+    let mh = '';
+    for (const mc of d.mc_runs) {
+      const pct = Math.round(mc.progress * 100);
+      const cls = mc.status==='error'?'error':mc.status==='warning'?'warning':mc.status==='finished'?'finished':'running';
+      mh += `<div class="mc-row">
+        <div class="mc-label" title="${escHtml(mc.name)}">${escHtml(mc.name)}</div>
+        <div class="progress-bar"><div class="progress-fill ${cls}" data-pct="${pct}"></div></div>
+        <div class="progress-pct">${pct}%</div>
+      </div>`;
+      if (mc.current_component) mh += `<div class="mc-comp">&#9654; ${escHtml(mc.current_component)}</div>`;
+    }
+    mcBox.innerHTML = mh;
+    for (const fill of mcBox.querySelectorAll('.progress-fill[data-pct]')) {
+      fill.style.width = `${fill.dataset.pct}%`;
+    }
+  }
+
+  // Component pipeline (aggregated over all MC runs)
+  const compGrid = document.getElementById('comp-grid');
+  const compHead = document.getElementById('comp-head');
+  if (compGrid && d.mc_runs.length) {
+    if (compHead) compHead.textContent = 'Component Pipeline — all MC runs';
+    const p = _buildAggregatePipeline(d.mc_runs);
+    let ch = '';
+    for (const key of p.stageOrder) {
+      const name = p.displayName.get(key) || key;
+      const initN = p.initCount.get(key) || 0;
+      const doneN = p.doneCount.get(key) || 0;
+      if (p.active.has(key)) ch += `<div class="comp-item active"><span class="comp-icon">&#9654;</span>${escHtml(name)}</div>`;
+      else if (initN > 0 && doneN >= initN) ch += `<div class="comp-item done"><span class="comp-icon">&#10003;</span>${escHtml(name)}</div>`;
+      else ch += `<div class="comp-item pending"><span class="comp-icon">&#9679;</span>${escHtml(name)}</div>`;
+    }
+    compGrid.innerHTML = ch;
+  }
+
+  // Log tabs (update if MC count changed)
+  const logTabs = _logTabList(d);
+  if (!logTabs.includes(activeLogTab)) activeLogTab = logTabs[0];
+  const tabsEl = document.getElementById('logTabs');
+  if (tabsEl) {
+    tabsEl.innerHTML = logTabs.map(t =>
+      `<div class="log-tab ${t===activeLogTab?'active':''}" onclick="switchLog('${t}')">${t.replace('.log','')}</div>`
+    ).join('');
+  }
+
+  // Parameters table (rarely changes – rebuild only once)
+  const pp = document.getElementById('params-panel');
+  if (pp && !pp.hasChildNodes() && d.parameters && Object.keys(d.parameters).length) {
+    let ph = `<div class="panel"><div class="panel-head">Parameters</div><div class="panel-body">
+      <table class="params-table"><thead><tr><th>Section</th><th>Parameter</th><th>Value</th></tr></thead><tbody>`;
+    let lastSec = '';
+    for (const [key,val] of Object.entries(d.parameters)) {
+      const [sec,param] = key.split('/');
+      ph += `<tr><td class="sec">${sec!==lastSec?escHtml(sec):''}</td><td class="param">${escHtml(param)}</td><td class="val">${escHtml(val)}</td></tr>`;
+      lastSec = sec;
+    }
+    ph += '</tbody></table></div></div>';
+    pp.innerHTML = ph;
+  }
+}
+
+function _txt(id, v) { const e = document.getElementById(id); if (e) e.textContent = v; }
+function _logTabList(d) { return ['experiment.log', ...(d.mc_runs||[]).map(mc => `mc_${mc.name}.log`)]; }
+
+function _normComponentName(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function _buildAggregatePipeline(mcRuns) {
+  const stageOrder = [];
+  const seen = new Set();
+  const active = new Set();
+  const doneCount = new Map();
+  const initCount = new Map();
+  const displayName = new Map();
+
+  for (const mc of (mcRuns || [])) {
+    const initialized = mc.initialized || [];
+    const done = new Set((mc.components_done || []).map(_normComponentName));
+
+    for (const c of initialized) {
+      const key = _normComponentName(c);
+      if (!key) continue;
+      if (!seen.has(key)) {
+        seen.add(key);
+        stageOrder.push(key);
+        displayName.set(key, c);
+      }
+      initCount.set(key, (initCount.get(key) || 0) + 1);
+      if (done.has(key)) doneCount.set(key, (doneCount.get(key) || 0) + 1);
+    }
+
+    if (mc.current_component) active.add(_normComponentName(mc.current_component));
+  }
+
+  return { stageOrder, active, doneCount, initCount, displayName };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – log  (smooth: preserve scroll, skip no-op writes)
+// ═══════════════════════════════════════════════════════════════════
+async function loadLog() {
+  if (!selectedRun) return;
+  const el = document.getElementById('logOutput');
+  if (!el) return;
+  const data = await api(`/api/runs/${selectedRun}/log/${activeLogTab}?tail=500`);
+  if (data.error) { el.innerHTML = `<span class="u-log-warn">${escHtml(data.error)}</span>`; lastLogHtml = ''; return; }
+
+  let entries = data.entries || [];
+  if (filterSev !== 'ALL') entries = entries.filter(e => e.sev === filterSev);
+
+  const newHtml = entries.map(e => {
+    const lines = e.msg.split('\n');
+    const main = lines[0];
+    const detail = lines.slice(1).map(l => `<span class="detail">${escHtml(l)}</span>`).join('');
+    return `<div class="log-line"><span class="sev sev-${e.sev}">${e.sev.padEnd(5)}</span> ${escHtml(main)}${detail}</div>`;
+  }).join('');
+
+  // Skip DOM write if content hasn't changed — prevents flicker & scroll jump
+  if (newHtml === lastLogHtml) return;
+
+  // Preserve scroll position for non-auto-scroll users
+  const prevScroll = el.scrollTop;
+  const wasAtBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 30;
+
+  el.innerHTML = newHtml;
+  lastLogHtml = newHtml;
+
+  if (autoScroll || wasAtBottom) {
+    el.scrollTop = el.scrollHeight;
+  } else {
+    el.scrollTop = prevScroll;
+  }
+}
+
+function switchLog(name) {
+  activeLogTab = name;
+  lastLogHtml = '';  // force re-render for new tab
+  loadLog();
+  // Update tab highlight without full rebuild
+  const tabsEl = document.getElementById('logTabs');
+  if (tabsEl) {
+    tabsEl.querySelectorAll('.log-tab').forEach(t => {
+      t.classList.toggle('active', t.textContent === name.replace('.log',''));
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – stop simulation
+// ═══════════════════════════════════════════════════════════════════
+async function stopRun() {
+  if (!selectedRun) return;
+  if (!confirm(`Stop simulation "${selectedRun}"?\n\nThis will forcefully terminate the process and all its children.`)) return;
+
+  const btn = document.getElementById('btn-stop');
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+
+  try {
+    const res = await api(`/api/runs/${selectedRun}/abort`, { method: 'POST' });
+    if (res.status === 'success') {
+      alert(res.message);
+    } else {
+      alert(res.message || 'Stop failed');
+    }
+  } catch (e) {
+    alert('Stop request failed: ' + e);
+  }
+  // Refresh immediately to reflect new state
+  await loadRuns();
+  if (selectedRun) {
+    const d = await api(`/api/runs/${selectedRun}`);
+    if (d && !d.error) updateDetailInPlace(d);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '\u25A0 Stop'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – delete run
+// ═══════════════════════════════════════════════════════════════════
+async function deleteRun() {
+  if (!selectedRun) return;
+
+  // Fetch current state so we can warn if active
+  let isActive = false;
+  try {
+    const d = await api(`/api/runs/${selectedRun}`);
+    isActive = d && (d.abortable || d.status === 'running' || d.status === 'initializing');
+  } catch (e) { /* ignore – proceed with delete */ }
+
+  let msg = `Delete run "${selectedRun}"?\n\nThis will permanently remove all run data from disk and cannot be undone.`;
+  if (isActive) {
+    msg = `Run "${selectedRun}" is currently active.\n\nDeleting will stop the simulation and permanently remove all run data.\n\nContinue?`;
+  }
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('btn-delete');
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+
+  try {
+    const res = await api(`/api/runs/${selectedRun}/delete`, { method: 'POST' });
+    if (res.status === 'success') {
+      const deleted = selectedRun;
+      selectedRun = null;
+      monitorBuiltFor = null;
+      lastLogHtml = '';
+      document.getElementById('mainContent').innerHTML =
+        `<div class="empty"><h2>Run deleted</h2><p>"${deleted}" has been removed.</p></div>`;
+      await loadRuns();
+    } else {
+      alert(res.message || 'Delete failed');
+      if (btn) { btn.disabled = false; btn.textContent = '\uD83D\uDDD1 Delete Run'; }
+    }
+  } catch (e) {
+    alert('Delete request failed: ' + e);
+    if (btn) { btn.disabled = false; btn.textContent = '\uD83D\uDDD1 Delete Run'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Monitor – refresh loop
+// ═══════════════════════════════════════════════════════════════════
+function startMonitorRefresh() {
+  if (refreshTimer) return;
+  async function tick() {
+    try {
+      await loadRuns();
+      if (selectedRun) await loadDetail();
+    } catch(e) { console.error(e); }
+    refreshTimer = setTimeout(tick, REFRESH_MS);
+  }
+  tick();
+}
+
+function stopMonitorRefresh() {
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Explorer – helpers and state sync
+// ═══════════════════════════════════════════════════════════════════
+function showExplStatus(msg, type) {
+  const el = document.getElementById('explStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'status-message show ' + type;
+  if (type === 'success') setTimeout(() => { el.className = 'status-message'; }, 3500);
+}
+
+function updateExplorerSelectionUi() {
+  const ids = Array.from(explSelectedReachIds);
+  const countEl = document.getElementById('explSelectedCount');
+  const chips = document.getElementById('explSelectedChips');
+  if (countEl) countEl.textContent = String(ids.length);
+  if (chips) {
+    chips.innerHTML = ids.slice(0, 80).map(id => `<span class="expl-chip">${escHtml(id)}</span>`).join('');
+  }
+}
+
+function getExplorerRunRoot() {
+  const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
+  return runRoot;
+}
+
+function currentExplorerSelection() {
+  const sel = document.getElementById('explRunSelect');
+  const val = sel?.value || '';
+  if (!val || !val.includes('||')) return null;
+  const [experiment, mc_run] = val.split('||');
+  return { experiment, mc_run };
+}
+
+function getExplorerRunEntry() {
+  const chosen = currentExplorerSelection();
+  if (!chosen) return null;
+  return explRuns.find(r =>
+    r.experiment === chosen.experiment && (r.mcs || []).some(mc => mc.id === chosen.mc_run)
+  ) || null;
+}
+
+function applyExplorerSimulationPeriod(force = false) {
+  const selectedOption = document.getElementById('explRunSelect')?.selectedOptions?.[0] || null;
+  const startValue = selectedOption?.dataset?.simulationStart || '';
+  const endValue = selectedOption?.dataset?.simulationEnd || '';
+  const entry = (!startValue && !endValue) ? getExplorerRunEntry() : null;
+  const fromEl = document.getElementById('explTimeFrom');
+  const toEl = document.getElementById('explTimeTo');
+  const simulationStart = startValue || entry?.simulation_start || '';
+  const simulationEnd = endValue || entry?.simulation_end || '';
+  if (fromEl && simulationStart && (force || !fromEl.value.trim())) {
+    fromEl.value = simulationStart;
+  }
+  if (toEl && simulationEnd && (force || !toEl.value.trim())) {
+    toEl.value = simulationEnd;
+  }
+}
+
+function ensureExplorerMap() {
+  if (explMap || typeof maplibregl === 'undefined') {
+    if (!explMap && typeof maplibregl === 'undefined') {
+      showExplStatus('Map library failed to load (MapLibre).', 'error');
+    }
+    return;
+  }
+  const mapEl = document.getElementById('explMap');
+  if (!mapEl) return;
+
+  explMap = new maplibregl.Map({
+    container: 'explMap',
+    style: {
+      version: 8,
+      sources: {
+        'expl-esri-world-imagery': {
+          type: 'raster',
+          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        }
+      },
+      layers: [{
+        id: 'expl-esri-world-imagery',
+        type: 'raster',
+        source: 'expl-esri-world-imagery'
+      }]
+    },
+    center: [8, 51],
+    zoom: 5,
+    attributionControl: false,
+  });
+
+  explMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+  explMap.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+
+  explMap.on('load', () => {
+    explMapReady = true;
+    if (!explMap.getSource('expl-reaches')) {
+      explMap.addSource('expl-lulc', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      explMap.addSource('expl-reaches', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      explMap.addSource('expl-selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      explMap.addLayer({
+        id: 'expl-lulc-fill',
+        type: 'fill',
+        source: 'expl-lulc',
+        paint: {
+          'fill-color': '#000000',
+          'fill-opacity': 0
+        }
+      });
+      explMap.addLayer({
+        id: 'expl-lulc-outline',
+        type: 'line',
+        source: 'expl-lulc',
+        paint: {
+          'line-color': '#a0622a',
+          'line-width': 1.0,
+          'line-opacity': 0.8
+        }
+      });
+      explMap.addLayer({
+        id: 'expl-reach-line',
+        type: 'line',
+        source: 'expl-reaches',
+        paint: { 'line-color': '#2f7de1', 'line-width': 1.6, 'line-opacity': 0.92 }
+      });
+      explMap.addLayer({
+        id: 'expl-reach-selected',
+        type: 'line',
+        source: 'expl-selected',
+        paint: { 'line-color': '#8fd3ff', 'line-width': 3.2, 'line-opacity': 1.0 }
+      });
+      explMap.on('click', 'expl-reach-line', onExplorerMapClick);
+      setupExplorerBoxSelection();
+      explMap.on('render', scheduleDrawReachLabels);
+    }
+  });
+}
+
+async function loadExplorerRuns() {
+  const sel = document.getElementById('explRunSelect');
+  if (!sel) return;
+  const runRoot = getExplorerRunRoot();
+  const url = runRoot
+    ? `/api/map-explorer/runs?run_root=${encodeURIComponent(runRoot)}`
+    : '/api/map-explorer/runs';
+  const renderRunOptions = (runs) => {
+    explRuns = runs;
+    sel.innerHTML = '<option value="">Select run / MC...</option>';
+    for (const item of runs) {
+      for (const mc of item.mcs || []) {
+        const option = document.createElement('option');
+        option.value = `${item.experiment}||${mc.id}`;
+        option.dataset.simulationStart = item.simulation_start || '';
+        option.dataset.simulationEnd = item.simulation_end || '';
+        const marker = item.geometry_available ? '' : ' [no geometry]';
+        option.textContent = `${item.experiment} / ${mc.id} (${item.scenario_name})${marker}`;
+        sel.appendChild(option);
+      }
+    }
+  };
+
+  try {
+    const response = await api(url);
+    const runs = response.runs || [];
+    renderRunOptions(runs);
+    if (!runs.length) {
+      sel.innerHTML = '<option value="">No compatible runs found</option>';
+      showExplStatus('No compatible runs found. Run analysis-capable experiments first.', 'error');
+      return;
+    }
+    if (!sel.value && sel.options.length > 1) {
+      sel.selectedIndex = 1;
+    }
+    applyExplorerSimulationPeriod(true);
+    await reloadExplorerData();
+    return;
+  } catch (primaryError) {
+    // Fallback for stale backend instances that do not have /api/map-explorer/runs yet.
+    try {
+      const fallbackUrl = runRoot
+        ? `/api/analysis/runs?run_root=${encodeURIComponent(runRoot)}`
+        : '/api/analysis/runs';
+      const analysisRuns = await api(fallbackUrl);
+      const mapped = (analysisRuns || []).map(r => ({
+        experiment: r.experiment,
+        scenario_path: r.landscape_scenario || '',
+        scenario_name: (r.landscape_scenario || '').split('/').pop() || 'unknown',
+        geometry_available: true,
+        mcs: (r.mcs || []).filter(m => m.has_store),
+      })).filter(r => (r.mcs || []).length);
+
+      renderRunOptions(mapped);
+      if (!mapped.length) {
+        sel.innerHTML = '<option value="">No compatible runs found</option>';
+        showExplStatus('No compatible runs found. ' + primaryError.message, 'error');
+        return;
+      }
+      if (!sel.value && sel.options.length > 1) {
+        sel.selectedIndex = 1;
+      }
+      applyExplorerSimulationPeriod(true);
+      showExplStatus('Explorer loaded via compatibility fallback. Please restart control panel to use new map API.', 'success');
+      await reloadExplorerData();
+    } catch (fallbackError) {
+      showExplStatus('Failed to load explorer runs: ' + primaryError.message + ' | fallback failed: ' + fallbackError.message, 'error');
+    }
+  }
+}
+
+function setExplorerSelectionSource() {
+  if (!explMapReady || !explMap) return;
+  const source = explMap.getSource('expl-reaches');
+  const selectedSource = explMap.getSource('expl-selected');
+  if (!source || !selectedSource) return;
+  const data = source._data || { type: 'FeatureCollection', features: [] };
+  const selectedFeatures = (data.features || []).filter(f => {
+    const rid = f?.properties?.reach_id;
+    return rid && explSelectedReachIds.has(String(rid));
+  });
+  selectedSource.setData({ type: 'FeatureCollection', features: selectedFeatures });
+}
+
+async function reloadExplorerData() {
+  ensureExplorerMap();
+  const chosen = currentExplorerSelection();
+  if (!chosen) return;
+  applyExplorerSimulationPeriod(true);
+  const runRoot = getExplorerRunRoot();
+  try {
+    const res = await api('/api/map-explorer/geometry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_root: runRoot, ...chosen })
+    });
+    if (res.status !== 'success') {
+      showExplStatus(res.message || 'Failed to load map geometry.', 'error');
+      return;
+    }
+    explCurrentRun = chosen;
+    explSelectedReachIds.clear();
+    updateExplorerSelectionUi();
+
+    if (explMapReady && explMap?.getSource('expl-reaches')) {
+      explMap.getSource('expl-lulc').setData(res.lulc_geojson || { type: 'FeatureCollection', features: [] });
+      explReachGeoJSON = res.geojson;
+      explMap.getSource('expl-reaches').setData(res.geojson);
+      setExplorerSelectionSource();
+      const b = res.meta?.bounds || [];
+      if (b.length === 4 && Number.isFinite(b[0]) && Number.isFinite(b[1])) {
+        explMap.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 30, duration: 500 });
+      }
+    }
+    const meta = document.getElementById('explMetaText');
+    if (meta) {
+      meta.textContent = `Features: ${res.meta?.feature_count || 0} | LULC: ${res.lulc_meta?.feature_count || 0} | ID field: ${res.meta?.reach_id_field || 'unknown'}`;
+    }
+    renderExplorerChart([], [], { resolution_used: 'none' });
+    showExplStatus((res.lulc_meta?.feature_count || 0) > 0 ? 'Stream map and LULC overlay loaded.' : 'Stream map loaded.', 'success');
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : e);
+    if (msg.includes('HTTP 404') && msg.includes('/api/map-explorer/geometry')) {
+      showExplStatus('Failed to load map geometry: backend route not found. Restart controlpanel so the updated server is running.', 'error');
+    } else {
+      showExplStatus('Failed to load map geometry: ' + msg, 'error');
+    }
+  }
+}
+
+function onExplorerMapClick(event) {
+  const feature = event?.features?.[0];
+  const rid = feature?.properties?.reach_id;
+  if (!rid) return;
+  const id = String(rid);
+  const additive = !!(event.originalEvent?.ctrlKey || event.originalEvent?.shiftKey);
+  if (!additive) {
+    explSelectedReachIds.clear();
+  }
+  if (explSelectedReachIds.has(id)) explSelectedReachIds.delete(id);
+  else explSelectedReachIds.add(id);
+
+  setExplorerSelectionSource();
+  updateExplorerSelectionUi();
+  loadExplorerTimeseries();
+}
+
+function clearExplorerSelection() {
+  explSelectedReachIds.clear();
+  setExplorerSelectionSource();
+  updateExplorerSelectionUi();
+  renderExplorerChart([], [], { resolution_used: 'none' });
+}
+
+async function loadExplorerTimeseries({ timeFrom = null, timeTo = null, resolution = null } = {}) {
+  if (!explCurrentRun) return;
+  const reachIds = Array.from(explSelectedReachIds);
+  if (!reachIds.length) {
+    renderExplorerChart([], [], { resolution_used: 'none' });
+    return;
+  }
+
+  const chosenResolution = resolution || document.getElementById('explResolution')?.value || 'auto';
+  const fromInput = timeFrom ?? (document.getElementById('explTimeFrom')?.value.trim() || null);
+  const toInput = timeTo ?? (document.getElementById('explTimeTo')?.value.trim() || null);
+  const body = {
+    ...explCurrentRun,
+    run_root: getExplorerRunRoot(),
+    reach_ids: reachIds,
+    time_from: fromInput,
+    time_to: toInput,
+    resolution: chosenResolution,
+  };
+  const reqKey = JSON.stringify(body);
+  explCurrentSelectionKey = reqKey;
+
+  try {
+    const res = await api('/api/map-explorer/timeseries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (explCurrentSelectionKey !== reqKey) return;
+    if (res.status !== 'success') {
+      showExplStatus(res.message || 'Failed to load timeseries data.', 'error');
+      return;
+    }
+    renderExplorerChart(res.times || [], res.series || [], res.meta || {});
+    const missing = res.meta?.missing_reaches || [];
+    const requested = res.meta?.requested_resolution || 'auto';
+    const used = res.meta?.resolution_used || 'none';
+    if (requested !== used) {
+      showExplStatus(`Resolution downgraded from ${requested} to ${used} due to data size.`, 'warning');
+    } else if (missing.length) {
+      showExplStatus(`Loaded with missing reaches: ${missing.slice(0, 8).join(', ')}`, 'error');
+    }
+  } catch (e) {
+    if (explCurrentSelectionKey !== reqKey) return;
+    showExplStatus('Failed to load timeseries: ' + e.message, 'error');
+  }
+}
+
+function renderExplorerChart(times, series, meta) {
+  const chart = document.getElementById('explChart');
+  if (!chart || typeof Plotly === 'undefined') {
+    showExplStatus('Chart library failed to load (Plotly).', 'error');
+    return;
+  }
+  const traces = (series || []).map((s, idx) => ({
+    x: times,
+    y: s.values,
+    type: 'scattergl',
+    mode: 'lines',
+    name: `Reach ${s.reach_id}`,
+    line: { width: 1.6 },
+    hovertemplate: 'Reach ' + s.reach_id + '<br>%{x}<br>%{y:.3f} ng/L<extra></extra>'
+  }));
+
+  const layout = {
+    paper_bgcolor: '#0f1117',
+    plot_bgcolor: '#0f1117',
+    font: { color: '#c9d1d9', size: 12, family: 'Segoe UI, Inter, system-ui, sans-serif' },
+    margin: { l: 52, r: 24, t: 30, b: 48 },
+    xaxis: { title: 'Time', gridcolor: '#2c313d', zerolinecolor: '#2c313d' },
+    yaxis: { title: 'PECsw [ng/L]', gridcolor: '#2c313d', zerolinecolor: '#2c313d' },
+    legend: { orientation: 'h', y: 1.1, x: 0 },
+    dragmode: 'zoom',
+    title: traces.length
+      ? `Selected reaches: ${traces.length} | Resolution: ${meta.resolution_used || 'n/a'}`
+      : 'Select one or more stream reaches on the map',
+  };
+
+  Plotly.react(chart, traces, layout, {
+    displaylogo: false,
+    responsive: true,
+    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+    scrollZoom: true,
+  });
+
+  chart.removeAllListeners?.('plotly_relayout');
+  chart.on?.('plotly_relayout', (ev) => {
+    const usingAuto = (document.getElementById('explResolution')?.value || 'auto') === 'auto';
+    if (!usingAuto || !meta || meta.resolution_used !== 'daily') return;
+    const from = ev['xaxis.range[0]'];
+    const to = ev['xaxis.range[1]'];
+    if (!from || !to) return;
+    const fromDt = new Date(from);
+    const toDt = new Date(to);
+    const days = (toDt - fromDt) / (1000 * 60 * 60 * 24);
+    if (Number.isFinite(days) && days <= 14) {
+      loadExplorerTimeseries({ timeFrom: from, timeTo: to, resolution: 'hourly' });
+    }
+  });
+}
+
+function _lineStringMidpoint(coords) {
+  if (!coords || coords.length === 0) return null;
+  return coords[Math.floor(coords.length / 2)];
+}
+
+function drawReachLabels() {
+  const canvas = document.getElementById('explLabelCanvas');
+  if (!canvas || !explMap || !explMapReady || !explReachGeoJSON) return;
+  const container = canvas.parentElement;
+  const W = container.offsetWidth;
+  const H = container.offsetHeight;
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (explMap.getZoom() < 11) return;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  for (const feature of (explReachGeoJSON.features || [])) {
+    const rid = feature?.properties?.reach_id;
+    if (!rid) continue;
+    const geom = feature?.geometry;
+    if (!geom) continue;
+    let midCoord;
+    if (geom.type === 'LineString') {
+      midCoord = _lineStringMidpoint(geom.coordinates);
+    } else if (geom.type === 'MultiLineString') {
+      const ring = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+      midCoord = _lineStringMidpoint(ring);
+    }
+    if (!midCoord) continue;
+    const pt = explMap.project(midCoord);
+    if (pt.x < -20 || pt.x > W + 20 || pt.y < -20 || pt.y > H + 20) continue;
+    const label = String(rid);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(10,10,15,0.85)';
+    ctx.strokeText(label, pt.x, pt.y);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, pt.x, pt.y);
+  }
+}
+
+let _labelRafPending = false;
+function scheduleDrawReachLabels() {
+  if (_labelRafPending) return;
+  _labelRafPending = true;
+  requestAnimationFrame(() => { _labelRafPending = false; drawReachLabels(); });
+}
+
+function setupExplorerBoxSelection() {
+  const canvas = explMap?.getCanvasContainer?.();
+  if (!canvas) return;
+  canvas.addEventListener('mousedown', (e) => {
+    if (!e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    explIsBoxSelecting = true;
+    explBoxStart = [e.clientX, e.clientY];
+    explMap.dragPan.disable();
+    explBoxDiv = document.createElement('div');
+    explBoxDiv.className = 'expl-box';
+    canvas.appendChild(explBoxDiv);
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!explIsBoxSelecting || !explBoxDiv || !explBoxStart) return;
+    const minX = Math.min(explBoxStart[0], e.clientX);
+    const minY = Math.min(explBoxStart[1], e.clientY);
+    const maxX = Math.max(explBoxStart[0], e.clientX);
+    const maxY = Math.max(explBoxStart[1], e.clientY);
+    const rect = canvas.getBoundingClientRect();
+    explBoxDiv.style.left = (minX - rect.left) + 'px';
+    explBoxDiv.style.top = (minY - rect.top) + 'px';
+    explBoxDiv.style.width = (maxX - minX) + 'px';
+    explBoxDiv.style.height = (maxY - minY) + 'px';
+  });
+
+  const finish = (e) => {
+    if (!explIsBoxSelecting) return;
+    const additive = !!(e.ctrlKey || e.shiftKey);
+    const rect = canvas.getBoundingClientRect();
+    const start = [explBoxStart[0] - rect.left, explBoxStart[1] - rect.top];
+    const end = [e.clientX - rect.left, e.clientY - rect.top];
+    const min = [Math.min(start[0], end[0]), Math.min(start[1], end[1])];
+    const max = [Math.max(start[0], end[0]), Math.max(start[1], end[1])];
+    if ((max[0] - min[0]) > 6 && (max[1] - min[1]) > 6) {
+      const feats = explMap.queryRenderedFeatures([min, max], { layers: ['expl-reach-line'] });
+      if (!additive) explSelectedReachIds.clear();
+      for (const f of feats) {
+        const rid = f?.properties?.reach_id;
+        if (rid) explSelectedReachIds.add(String(rid));
+      }
+      setExplorerSelectionSource();
+      updateExplorerSelectionUi();
+      loadExplorerTimeseries();
+    }
+    if (explBoxDiv?.parentNode) explBoxDiv.parentNode.removeChild(explBoxDiv);
+    explBoxDiv = null;
+    explBoxStart = null;
+    explIsBoxSelecting = false;
+    explMap.dragPan.enable();
+  };
+
+  canvas.addEventListener('mouseup', finish);
+  canvas.addEventListener('mouseleave', finish);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  const uiProfileSpec = await loadUiProfile();
+  const prepEnabled = uiTabAllowed('configure') || uiTabAllowed('monitor') || uiTabAllowed('landscape');
+  const analysisEnabled = uiTabAllowed('analysis') || uiTabAllowed('explorer');
+
+  const subsetInspectBtn = document.getElementById('subsetInspectBtn');
+  if (subsetInspectBtn) {
+    subsetInspectBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      inspectAndZoomSubsetScenario(true);
+    });
+  }
+  const subsetSourceScenario = document.getElementById('subsetSourceScenario');
+  if (subsetSourceScenario) {
+    subsetSourceScenario.addEventListener('change', () => {
+      onSubsetSourceChange();
+    });
+  }
+
+  if (prepEnabled) {
+    initializeScenarioDateAutofill();
+    await loadWarningDowngradeRules();
+  }
+  await loadScenarios();
+  if (prepEnabled) {
+    await loadTemplate();
+    ensureSubsetMap();
+    useCurrentScenarioForSubset();
+    loadXrunFiles();
+  }
+  if (analysisEnabled) {
+    loadAnlRuns();
+    loadAnlScenarios();
+  }
+  checkAnalysisPortableStatus();
+
+  const explRun = document.getElementById('explRunSelect');
+  const explRes = document.getElementById('explResolution');
+  const explFrom = document.getElementById('explTimeFrom');
+  const explTo = document.getElementById('explTimeTo');
+  if (explRun) explRun.addEventListener('change', () => {
+    applyExplorerSimulationPeriod(true);
+    reloadExplorerData();
+  });
+  if (explRes) explRes.addEventListener('change', () => loadExplorerTimeseries());
+  if (explFrom) explFrom.addEventListener('change', () => loadExplorerTimeseries());
+  if (explTo) explTo.addEventListener('change', () => loadExplorerTimeseries());
+  renderExplorerChart([], [], { resolution_used: 'none' });
+
+  switchTab(uiProfileSpec.defaultTab, true);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis Python Portable Status
+// ═══════════════════════════════════════════════════════════════════
+async function checkAnalysisPortableStatus() {
+  const pill = document.getElementById('analysisPill');
+  if (!pill) return;
+  pill.textContent = 'Checking…';
+  pill.style.background = 'var(--bg3)';
+  pill.style.color = 'var(--text2)';
+  pill.title = 'Checking analysis Python runtime…';
+  try {
+    const res = await fetch('/api/analysis-portable-check');
+    const data = await res.json();
+    if (data.ready) {
+      pill.textContent = 'Analysis Python ready';
+      pill.style.background = 'var(--ok)';
+      pill.style.color = '#000';
+      pill.title = 'Portable analysis/python/python.exe and all required packages are present.';
+    } else {
+      pill.textContent = 'Analysis Python missing';
+      pill.style.background = 'var(--err)';
+      pill.style.color = '#fff';
+      let msg = 'Portable analysis Python runtime is NOT ready. ';
+      if (data.missing_python) msg += '\nMissing: analysis/python/python.exe';
+      if (data.missing_packages && data.missing_packages.length) msg += `\nMissing packages: ${data.missing_packages.join(', ')}`;
+      pill.title = msg;
+    }
+  } catch (e) {
+    pill.textContent = 'Analysis Python check failed';
+    pill.style.background = 'var(--warn)';
+    pill.style.color = '#000';
+    pill.title = 'Could not check analysis Python runtime.';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis – scenario defaults (mirrors notebook match statement)
+// ═══════════════════════════════════════════════════════════════════
+const ANL_SCENARIO_DEFAULTS = {
+  'Rummen':          { single: '1388,1610,1738,1505', group: '1610,1738,1505', zoomFrom: '1995-05-01', zoomTo: '1995-06-01' },
+  'Oudebeek':        { single: '42',                  group: '',               zoomFrom: '',           zoomTo: ''           },
+  'Oudebeek-Beek7':  { single: '42',                  group: '',               zoomFrom: '',           zoomTo: ''           },
+  'Muenster':        { single: '154',                  group: '772,575,149',   zoomFrom: '2000-05-01', zoomTo: '2000-06-01' },
+  'Wetter_2':        { single: '154',                  group: '131,130,437',   zoomFrom: '1991-05-01', zoomTo: '1991-05-10' },
+  'WetterfeldSlice': { single: '154',                  group: '131,130,437',   zoomFrom: '1991-05-01', zoomTo: '1991-05-10' },
+  'Muschenheim':     { single: '315,230,151,149,735',  group: '151,149,735',   zoomFrom: '',           zoomTo: ''           },
+  'Bruchenbruecken': { single: '660',                  group: '652,653,4443',  zoomFrom: '1991-05-01', zoomTo: '1991-06-01' },
+  'Funne':           { single: '12,22,527',            group: '99,97,167',     zoomFrom: '2010-05-01', zoomTo: '2010-06-01' },
+  'GKB':             { single: '166',                  group: '12,144,165',    zoomFrom: '2010-04-01', zoomTo: '2010-07-01' },
+};
+
+const ANL_EXPOSURE_MODEL_LABELS = {
+  CascadeToxswa: 'CascadeToxswa',
+  StepsRiverNetwork: 'StepsRiverNetwork',
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis – state
+// ═══════════════════════════════════════════════════════════════════
+let anlRunsData      = [];   // [{experiment, mcs:[{id,has_store}], landscape_scenario}]
+let anlCurrentJobId  = null;
+let anlPollTimer     = null;
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis – load runs + scenarios
+// ═══════════════════════════════════════════════════════════════════
+let _anlDefaultRunDir = '';
+
+async function loadAnlRuns() {
+  // Pre-fill the run-root field with the server default (run/ folder) on first load
+  const rootInput = document.getElementById('anlRunRoot');
+  if (!rootInput.value) {
+    try {
+      const d = await api('/api/analysis/default-run-dir');
+      _anlDefaultRunDir = d.run_dir || '';
+      rootInput.value = _anlDefaultRunDir;
+    } catch(e) { /* ignore */ }
+  }
+  await refreshAnlRuns();
+}
+
+async function refreshAnlRuns() {
+  const runRoot = document.getElementById('anlRunRoot').value.trim();
+  const url = runRoot
+    ? `/api/analysis/runs?run_root=${encodeURIComponent(runRoot)}`
+    : '/api/analysis/runs';
+  try {
+    anlRunsData = await api(url);
+    const sel = document.getElementById('anlExperiment');
+    sel.innerHTML = '<option value="">Select experiment\u2026</option>';
+    anlRunsData.forEach(r => {
+      const o = document.createElement('option');
+      o.value = r.experiment; o.textContent = r.experiment;
+      sel.appendChild(o);
+    });
+    // Reset MC dropdown
+    document.getElementById('anlMcRun').innerHTML =
+      '<option value="">Select experiment first\u2026</option>';
+    setAnlExposureModelOptions([], 'Select MC run first…');
+    if (!anlRunsData.length) {
+      showAnlStatus('No analysis-ready experiments found in the selected run folder.', 'warning');
+    }
+  } catch(e) {
+    console.error('refreshAnlRuns', e);
+    showAnlStatus(`Failed to load experiments: ${e.message}`, 'error');
+  }
+}
+
+function onAnlRunRootInput() {
+  // Debounce: refresh 600 ms after user stops typing
+  clearTimeout(onAnlRunRootInput._t);
+  onAnlRunRootInput._t = setTimeout(refreshAnlRuns, 600);
+}
+
+function resetAnlRunRoot() {
+  const rootInput = document.getElementById('anlRunRoot');
+  rootInput.value = _anlDefaultRunDir;
+  refreshAnlRuns();
+}
+
+async function loadAnlScenarios() {
+  try {
+    const scenarios = await api('/api/scenarios');
+    const sel = document.getElementById('anlScenario');
+    sel.innerHTML = '<option value="">(none)</option>';
+    scenarios.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.path; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+  } catch(e) { console.error('loadAnlScenarios', e); }
+}
+
+function onAnlExperimentChange() {
+  const exp   = document.getElementById('anlExperiment').value;
+  const mcSel = document.getElementById('anlMcRun');
+  mcSel.innerHTML = '<option value="">Select MC run…</option>';
+  setAnlExposureModelOptions([], 'Select MC run first…');
+  if (!exp) return;
+  const entry = anlRunsData.find(r => r.experiment === exp);
+  if (!entry) return;
+  entry.mcs.forEach(mc => {
+    const o = document.createElement('option');
+    o.value = mc.id;
+    o.textContent = mc.id + (mc.has_store ? '' : '  ⚠ no store');
+    o.disabled = !mc.has_store;
+    mcSel.appendChild(o);
+  });
+}
+
+function onAnlMcRunChange() {
+  const exp = document.getElementById('anlExperiment').value;
+  if (!exp) return;
+  const entry = anlRunsData.find(r => r.experiment === exp);
+  applyAnlScenarioFromExperiment(entry, { requireMc: true });
+  refreshAnlExposureModelOptions();
+}
+
+function setAnlExposureModelOptions(availableModels, emptyMessage = 'No exposure data available') {
+  const select = document.getElementById('anlExposureModel');
+  const previous = select.value;
+  select.innerHTML = '';
+
+  if (!availableModels.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = emptyMessage;
+    select.appendChild(option);
+    select.value = '';
+    select.disabled = true;
+    return;
+  }
+
+  availableModels.forEach(model => {
+    const option = document.createElement('option');
+    option.value = model;
+    option.textContent = ANL_EXPOSURE_MODEL_LABELS[model] || model;
+    select.appendChild(option);
+  });
+  select.disabled = false;
+  select.value = availableModels.includes(previous) ? previous : availableModels[0];
+}
+
+async function refreshAnlExposureModelOptions() {
+  const experiment = document.getElementById('anlExperiment').value;
+  const mcRun = document.getElementById('anlMcRun').value;
+  const runRoot = document.getElementById('anlRunRoot').value.trim();
+
+  if (!experiment || !mcRun) {
+    setAnlExposureModelOptions([], 'Select MC run first…');
+    return;
+  }
+
+  const qs = new URLSearchParams({
+    experiment,
+    mc_run: mcRun,
+    run_root: runRoot,
+  });
+  try {
+    const data = await api(`/api/analysis/exposure-models?${qs.toString()}`);
+    setAnlExposureModelOptions(
+      data.available_models || [],
+      data.message || 'No supported exposure datasets found in arr.dat'
+    );
+    if (!(data.available_models || []).length) {
+      showAnlStatus(data.message || 'No supported exposure datasets found in arr.dat.', 'warning');
+    }
+  } catch (e) {
+    console.error('refreshAnlExposureModelOptions', e);
+    const msg = e && e.message ? e.message : 'Exposure model check failed';
+    setAnlExposureModelOptions([], msg);
+    showAnlStatus(`Exposure model detection failed: ${msg}`, 'error');
+  }
+}
+
+function applyAnlScenarioFromExperiment(entry, { requireMc = false } = {}) {
+  if (!entry) return;
+  if (requireMc && !document.getElementById('anlMcRun').value) return;
+
+  const scenarioPath = (entry.landscape_scenario || '').trim();
+  if (!scenarioPath) return;
+
+  const sel = document.getElementById('anlScenario');
+  const name = document.getElementById('anlScenarioName');
+  const options = Array.from(sel.options || []);
+  let opt = options.find(o => o.value === scenarioPath);
+
+  // Keep scenario path selectable even when it does not exist in /scenario anymore.
+  if (!opt) {
+    const fallbackText = scenarioPath.split('/').pop() || scenarioPath;
+    opt = document.createElement('option');
+    opt.value = scenarioPath;
+    opt.textContent = `${fallbackText} (from experiment)`;
+    sel.appendChild(opt);
+  }
+
+  sel.value = scenarioPath;
+  onAnlScenarioSelect();
+
+  const folderName = opt.textContent.replace(' (from experiment)', '').trim();
+  const matched = Object.keys(ANL_SCENARIO_DEFAULTS).find(
+    k => folderName.toLowerCase().includes(k.toLowerCase())
+  );
+  const defaultName = matched || folderName;
+  if (defaultName) {
+    name.value = defaultName;
+    applyAnlScenarioDefaults(defaultName);
+  }
+}
+
+function onAnlScenarioSelect() {
+  const sel  = document.getElementById('anlScenario');
+  const name = document.getElementById('anlScenarioName');
+  if (!name.value) {
+    // Auto-fill scenario name from folder name as a hint
+    const folder = sel.options[sel.selectedIndex]?.text || '';
+    name.placeholder = folder || 'e.g. Muenster';
+  }
+  // If the folder name matches a known scenario, prefill settings
+  const folderName = sel.options[sel.selectedIndex]?.text || '';
+  const matched = Object.keys(ANL_SCENARIO_DEFAULTS).find(
+    k => folderName.toLowerCase().includes(k.toLowerCase())
+  );
+  if (matched && !name.value) {
+    name.value = matched;
+    applyAnlScenarioDefaults(matched);
+  }
+}
+
+function onAnlScenarioNameInput() {
+  const name = document.getElementById('anlScenarioName').value.trim();
+  applyAnlScenarioDefaults(name);
+}
+
+function applyAnlScenarioDefaults(name) {
+  const d = ANL_SCENARIO_DEFAULTS[name];
+  if (!d) return;
+  // Only fill fields that are currently empty (don't overwrite user edits)
+  const single   = document.getElementById('anlReachSingle');
+  const group    = document.getElementById('anlReachGroup');
+  const zoomFrom = document.getElementById('anlZoomFrom');
+  const zoomTo   = document.getElementById('anlZoomTo');
+  if (!single.value)   single.value   = d.single;
+  if (!group.value)    group.value    = d.group;
+  if (!zoomFrom.value) zoomFrom.value = d.zoomFrom;
+  if (!zoomTo.value)   zoomTo.value   = d.zoomTo;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis – status helpers
+// ═══════════════════════════════════════════════════════════════════
+function showAnlStatus(msg, type) {
+  const el = document.getElementById('anlStatus');
+  el.textContent = msg;
+  el.className = 'status-message show ' + type;
+  if (type === 'success') setTimeout(() => { el.className = 'status-message'; }, 5000);
+}
+
+function anlLogSevClass(line) {
+  if (line.startsWith('ERROR')) return 'sev-ERROR';
+  if (line.startsWith('WARN ')) return 'sev-WARN';
+  if (line.startsWith('OK   ')) return 'sev-OK';
+  if (line.startsWith('INFO ')) return 'sev-INFO';
+  return 'sev-INFO';
+}
+
+function renderAnlLog(lines) {
+  const el = document.getElementById('anlLog');
+  if (!el) return;
+  const wasBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 40;
+  el.innerHTML = lines.map(l =>
+    `<div class="log-line"><span class="sev ${anlLogSevClass(l)}">${escHtml(l.slice(0,5))}</span> ${escHtml(l.slice(6))}</div>`
+  ).join('');
+  if (wasBottom) el.scrollTop = el.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis – PECsw table
+// ═══════════════════════════════════════════════════════════════════
+async function loadAnlPecswTable() {
+  if (!anlCurrentJobId) return;
+  try {
+    const d = await api(`/api/analysis/table/${anlCurrentJobId}`);
+    if (d.error) return;
+    renderAnlPecswTable(d);
+  } catch(e) { /* table not yet written – silently skip */ }
+}
+
+function renderAnlPecswTable(d) {
+  const panel = document.getElementById('anlPecswTablePanel');
+  const tbl   = document.getElementById('anlPecswTable');
+  if (!panel || !tbl || !d.rows || !d.columns) return;
+
+  // Find global max to colour-scale values
+  const allVals = d.rows.flatMap(r => r.values);
+  const gMax = Math.max(...allVals);
+  const gMin = Math.min(...allVals.filter(v => v > 0));
+
+  // Header row
+  const pct = p => `Px${Math.round(p * 100)}`;
+  const cols = d.columns; // already formatted strings
+  let html = '<thead><tr>';
+  html += `<th class="row-hdr" title="Temporal percentile">pt ↓ / px →</th>`;
+  cols.forEach(c => html += `<th>${escHtml(String(c))}</th>`);
+  html += '</tr></thead><tbody>';
+
+  // Data rows
+  d.rows.forEach(row => {
+    const ptLabel = `Pt${Math.round(row.pt * 100)}`;
+    html += `<tr><th class="row-hdr">${escHtml(ptLabel)}</th>`;
+    row.values.forEach(v => {
+      const fmtV = v === 0 ? '0' : v < 0.001 ? v.toExponential(2) : v.toFixed(4);
+      // colour: high = warm, low-but-nonzero = cool, zero = muted
+      let cls = '';
+      if (v > 0 && gMax > 0) {
+        const rel = (v - gMin) / (gMax - gMin || 1);
+        cls = rel > 0.75 ? ' class="hi"' : rel < 0.15 ? ' class="lo"' : '';
+      }
+      html += `<td${cls}>${fmtV}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  tbl.innerHTML = html;
+  panel.style.display = 'block';
+}
+
+function toggleAnlTable() {
+  const wrap = document.getElementById('anlPecswTableWrap');
+  const btn  = document.getElementById('btnTogglePecswTable');
+  const hidden = wrap.style.display === 'none';
+  wrap.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? '\u25BC hide' : '\u25B6 show';
+}
+// ═══════════════════════════════════════════════════════════════════
+function startAnlPolling() {
+  if (anlPollTimer) return;
+  async function tick() {
+    if (!anlCurrentJobId) return;
+    try {
+      const s = await api(`/api/analysis/status/${anlCurrentJobId}`);
+      if (s.error) { stopAnlPolling(); return; }
+      renderAnlLog(s.log_lines || []);
+      const head = document.getElementById('anlProgressHead');
+      if (head) head.textContent = s.running
+        ? 'Analysis Running…'
+        : `Analysis ${s.exit_code === 0 ? 'Complete' : 'Finished (exit ' + s.exit_code + ')'}  –  ${s.started_at}`;
+      if (!s.running) {
+        stopAnlPolling();
+        await loadAnlOutputs();
+        const btn = document.getElementById('btnRunAnalysis');
+        if (btn) { btn.disabled = false; btn.textContent = '\u25B6 Run Analysis'; }
+        if (s.exit_code === 0) showAnlStatus('Analysis complete.', 'success');
+        else showAnlStatus(`Analysis finished with exit code ${s.exit_code}. Check log for errors.`, 'error');
+      }
+    } catch(e) { console.error('anl poll', e); }
+    if (anlPollTimer) anlPollTimer = setTimeout(tick, 2000);
+  }
+  anlPollTimer = setTimeout(tick, 1500);
+}
+
+function stopAnlPolling() {
+  if (anlPollTimer) { clearTimeout(anlPollTimer); anlPollTimer = null; }
+}
+
+async function loadAnlOutputs() {
+  if (!anlCurrentJobId) return;
+  try {
+    const data = await api(`/api/analysis/outputs/${anlCurrentJobId}`);
+    if (data.error) return;
+    const outputFiles = Array.isArray(data.files) ? data.files : [];
+
+    // Load PECsw percentile table independently from downloadable file chips.
+    await loadAnlPecswTable();
+
+    const panel  = document.getElementById('anlOutputPanel');
+    const files  = document.getElementById('anlOutputFiles');
+    const gallery = document.getElementById('anlGallery');
+    if (!panel || !files || !gallery) return;
+    panel.style.display = 'block';
+
+    if (!outputFiles.length) {
+      files.innerHTML = '<span class="u-note-xs">No downloadable files were generated for this analysis.</span>';
+      gallery.innerHTML = '';
+      return;
+    }
+
+    // File chip buttons
+    files.innerHTML = outputFiles.map(f => {
+      const icon  = f.type === 'image' ? '\uD83D\uDDBC' : f.type === 'excel' ? '\uD83D\uDCC8' : '\uD83D\uDCCE';
+      const url   = `/api/analysis/file/${anlCurrentJobId}/${encodeURIComponent(f.name)}`;
+      const kb    = (f.size / 1024).toFixed(1);
+      return `<a href="${url}" download="${escHtml(f.name)}" class="u-output-chip"
+        title="${escHtml(f.name)} (${kb} KB)">${icon} ${escHtml(f.name)}</a>`;
+    }).join('');
+
+    // Image gallery
+    const images = outputFiles.filter(f => f.type === 'image');
+    if (images.length) {
+      gallery.innerHTML = images.map(f => {
+        const url = `/api/analysis/file/${anlCurrentJobId}/${encodeURIComponent(f.name)}`;
+        return `<div class="panel u-panel-mb-8">
+          <div class="panel-head">${escHtml(f.name)}</div>
+          <div class="panel-body u-panel-body-gallery">
+            <img src="${url}" alt="${escHtml(f.name)}"
+                 class="u-gallery-img"
+                 onclick="window.open(this.src,'_blank')">
+          </div></div>`;
+      }).join('');
+    } else {
+      gallery.innerHTML = '';
+    }
+  } catch(e) { console.error('loadAnlOutputs', e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Analysis – start
+// ═══════════════════════════════════════════════════════════════════
+async function startAnalysis() {
+  const experiment = document.getElementById('anlExperiment').value;
+  const mc_run     = document.getElementById('anlMcRun').value;
+  const exposureModel = document.getElementById('anlExposureModel').value;
+  if (!experiment || !mc_run) {
+    showAnlStatus('Please select an experiment and MC run.', 'error');
+    return;
+  }
+  if (!exposureModel) {
+    showAnlStatus('No supported exposure model is available for the selected run.', 'error');
+    return;
+  }
+
+  const body = {
+    experiment,
+    mc_run,
+    run_root:        document.getElementById('anlRunRoot').value.trim(),
+    scenario_path:   document.getElementById('anlScenario').value,
+    scenario_name:   document.getElementById('anlScenarioName').value.trim(),
+    output_dir:      document.getElementById('anlOutputDir').value.trim(),
+    run_pec:         document.getElementById('anlRunPec').checked,
+    run_guts:        document.getElementById('anlRunGuts').checked,
+    exposed_only:    document.getElementById('anlExposedOnly').checked,
+    exposure_model:  exposureModel,
+    reach_ids_single: document.getElementById('anlReachSingle').value.trim(),
+    reach_ids_group:  document.getElementById('anlReachGroup').value.trim(),
+    plotzoom_from:   document.getElementById('anlZoomFrom').value.trim(),
+    plotzoom_to:     document.getElementById('anlZoomTo').value.trim(),
+  };
+
+  const btn = document.getElementById('btnRunAnalysis');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  document.getElementById('anlLoading').classList.add('show');
+
+  // Reset results panel
+  anlCurrentJobId = null;
+  stopAnlPolling();
+  document.getElementById('anlResults').style.display = 'none';
+  document.getElementById('anlOutputPanel').style.display = 'none';
+  document.getElementById('anlPecswTablePanel').style.display = 'none';
+  document.getElementById('anlPecswTableWrap').style.display = '';
+  document.getElementById('btnTogglePecswTable').textContent = '\u25BC hide';
+  document.getElementById('anlGallery').innerHTML = '';
+  document.getElementById('anlOutputFiles').innerHTML = '';
+  document.getElementById('anlLog').textContent = 'Waiting…';
+
+  try {
+    const r = await api('/api/analysis/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    document.getElementById('anlLoading').classList.remove('show');
+    if (r.status === 'success') {
+      anlCurrentJobId = r.job_id;
+      document.getElementById('anlResults').style.display = 'block';
+      document.getElementById('anlProgressHead').textContent = 'Analysis Running…';
+      showAnlStatus(r.message, 'success');
+      btn.textContent = '\u23F3 Running…';
+      startAnlPolling();
+    } else {
+      showAnlStatus(r.message || 'Failed to start analysis', 'error');
+      btn.disabled = false; btn.textContent = '\u25B6 Run Analysis';
+    }
+  } catch(e) {
+    document.getElementById('anlLoading').classList.remove('show');
+    showAnlStatus('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.textContent = '\u25B6 Run Analysis';
+  }
+}
+</script>
+</body>
+</html>
