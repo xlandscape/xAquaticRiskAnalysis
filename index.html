@@ -306,18 +306,18 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════ TOP BAR ══════════ -->
 <div class="topbar">
   <h1>xAquaticRisk</h1>
-  <span class="tag" id="uiTag">Control Panel</span>
+  <span class="tag" id="uiTag">Analysis &amp; Exploration</span>
 
   <div class="tab-strip">
-    <button class="tab-btn active" onclick="switchTab('configure')" id="tabConfigure">
+    <button class="tab-btn u-hidden" onclick="switchTab('configure')" id="tabConfigure">
       <svg viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/></svg>
       Parameterisation
     </button>
-    <button class="tab-btn" onclick="switchTab('monitor')" id="tabMonitor">
+    <button class="tab-btn u-hidden" onclick="switchTab('monitor')" id="tabMonitor">
       <svg viewBox="0 0 16 16"><path d="M1 3.5A1.5 1.5 0 012.5 2h11A1.5 1.5 0 0115 3.5v9a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9zm1.5-.5a.5.5 0 00-.5.5v9a.5.5 0 00.5.5h11a.5.5 0 00.5-.5v-9a.5.5 0 00-.5-.5h-11z"/><path d="M3 5.5a.5.5 0 01.5-.5h9a.5.5 0 010 1h-9a.5.5 0 01-.5-.5zM3 8a.5.5 0 01.5-.5h5a.5.5 0 010 1h-5A.5.5 0 013 8zm0 2.5a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3a.5.5 0 01-.5-.5z"/></svg>
       Monitoring
     </button>
-    <button class="tab-btn" onclick="switchTab('analysis')" id="tabAnalysis">
+    <button class="tab-btn active" onclick="switchTab('analysis')" id="tabAnalysis">
       <svg viewBox="0 0 16 16"><path d="M0 0h1v15h15v1H0V0zm10 3.5a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-1 0V4.9l-3.613 4.417a.5.5 0 01-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 01-.808-.588l4-5.5a.5.5 0 01.758-.06l2.609 2.61L13.445 4H10.5a.5.5 0 01-.5-.5z"/></svg>
       Analysis
     </button>
@@ -325,7 +325,7 @@ a{color:var(--accent);text-decoration:none}
       <svg viewBox="0 0 16 16"><path d="M15.817.113A.5.5 0 0 0 15.31 0h-.083a.5.5 0 0 0-.238.06L10.5 2.31 6 0 1.276 2.362A.5.5 0 0 0 1 2.81v12.69a.5.5 0 0 0 .724.447L6 13.69l4.5 2.25 4.724-2.362a.5.5 0 0 0 .276-.447V.5a.5.5 0 0 0-.183-.387zM6.5 1.31l3 1.5v11.88l-3-1.5V1.31zm-1 11.88-3 1.5V3.31l3-1.5v11.38zm8 0-3 1.5V2.81l3-1.5v11.88z"/></svg>
       Explorer
     </button>
-    <button class="tab-btn" onclick="switchTab('landscape')" id="tabLandscape">
+    <button class="tab-btn u-hidden" onclick="switchTab('landscape')" id="tabLandscape">
       <svg viewBox="0 0 16 16"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M1.5 2A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13zm13 1a.5.5 0 0 1 .5.5v6l-3.775-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12v.54A.505.505 0 0 1 1 12.5v-9a.5.5 0 0 1 .5-.5h13z"/></svg>
       Landscape Scenario
     </button>
@@ -339,7 +339,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      CONFIGURE PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page active" id="pageConfigure">
+<div class="page u-hidden" id="pageConfigure">
   <div class="cfg-wrap">
 
     <!-- Parameterisation (xrun-) File Operations -->
@@ -706,7 +706,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      LANDSCAPE SCENARIO PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="pageLandscape">
+<div class="page u-hidden" id="pageLandscape">
   <div class="cfg-wrap">
 
     <div class="card">
@@ -817,7 +817,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      MONITOR PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="pageMonitor">
+<div class="page u-hidden" id="pageMonitor">
   <div class="mon-layout">
     <div class="sidebar">
       <div class="sidebar-header">
@@ -839,7 +839,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      ANALYSIS PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="pageAnalysis">
+<div class="page active" id="pageAnalysis">
   <div class="cfg-wrap">
 
     <!-- ─ Run Selection ─────────────────────────────────────────────── -->
@@ -1205,16 +1205,16 @@ const UI_PROFILES = {
   },
 };
 
-let uiProfileName = 'all';
-let uiAllowedTabs = new Set(UI_PROFILES.all.allowedTabs);
+let uiProfileName = 'analysis';
+let uiAllowedTabs = new Set(UI_PROFILES.analysis.allowedTabs);
 
 function normalizeUiProfileName(raw) {
   const name = String(raw || '').trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(UI_PROFILES, name) ? name : 'all';
+  return Object.prototype.hasOwnProperty.call(UI_PROFILES, name) ? name : 'analysis';
 }
 
 function getUiProfileSpec(name) {
-  return UI_PROFILES[normalizeUiProfileName(name)] || UI_PROFILES.all;
+  return UI_PROFILES[normalizeUiProfileName(name)] || UI_PROFILES.analysis;
 }
 
 function uiTabAllowed(name) {
@@ -1222,7 +1222,7 @@ function uiTabAllowed(name) {
 }
 
 function configureUiProfile(profilePayload) {
-  uiProfileName = normalizeUiProfileName(profilePayload?.profile);
+  uiProfileName = 'analysis';
   const spec = getUiProfileSpec(uiProfileName);
   uiAllowedTabs = new Set(spec.allowedTabs);
 
@@ -1242,13 +1242,7 @@ function configureUiProfile(profilePayload) {
 }
 
 async function loadUiProfile() {
-  try {
-    const profile = await api('/api/ui/profile');
-    return configureUiProfile(profile || { profile: 'all' });
-  } catch (e) {
-    console.warn('Failed to load UI profile; falling back to all profile.', e);
-    return configureUiProfile({ profile: 'all' });
-  }
+  return configureUiProfile({ profile: 'analysis' });
 }
 
 // ═══════════════════════════════════════════════════════════════════
