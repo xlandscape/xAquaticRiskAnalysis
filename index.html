@@ -892,7 +892,7 @@ a{color:var(--accent);text-decoration:none}
         <div class="form-group">
           <label for="anlScenarioRoot">Scenario Folder</label>
           <div class="u-flex-gap-4">
-            <input type="text" id="anlScenarioRoot" placeholder="(run_root)/scenarios"
+            <input type="text" id="anlScenarioRoot" placeholder="(run_root)/scenario"
                    class="u-fill" oninput="onAnlScenarioRootInput()">
             <button type="button" class="btn btn-outline btn-sm"
                     onclick="refreshAnlScenarios()" title="Reload scenario list from this folder">
@@ -903,7 +903,7 @@ a{color:var(--accent);text-decoration:none}
               &#8962; Default
             </button>
           </div>
-          <div class="help-text">Defaults to <code>Simulation Run Folder + /scenarios</code>.
+          <div class="help-text">Defaults to <code>Simulation Run Folder + \\scenario</code>.
             You can set a different absolute folder path to load scenarios from another location.</div>
         </div>
         <div class="form-row">
@@ -3082,7 +3082,7 @@ function _joinPath(base, segment) {
 
 function _getDefaultAnlScenarioRoot() {
   const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
-  return _joinPath(runRoot, 'scenarios');
+  return _joinPath(runRoot, 'scenario');
 }
 
 function _syncAnlScenarioRootWithRunRoot() {

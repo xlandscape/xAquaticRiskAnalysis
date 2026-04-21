@@ -3373,13 +3373,13 @@ def list_runs_with_mcs(run_root):
 def list_analysis_scenarios(run_root: str, scenario_root: Optional[str] = None) -> list:
     """List scenario folders from a configurable root.
 
-    Default root is <run_root>/scenarios.
+    Default root is <run_root>/scenario.
     """
     run_root_abs = os.path.abspath(run_root)
     if scenario_root and str(scenario_root).strip():
         root = os.path.abspath(str(scenario_root).strip())
     else:
-        root = os.path.join(run_root_abs, "scenarios")
+        root = os.path.join(run_root_abs, "scenario")
 
     if not os.path.isdir(root):
         return []
