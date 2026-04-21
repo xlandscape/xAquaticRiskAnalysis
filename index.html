@@ -3077,7 +3077,8 @@ let _anlDefaultRunDir = '';
 function _joinPath(base, segment) {
   const b = String(base || '').trim().replace(/[\\/]+$/, '');
   if (!b) return segment;
-  return `${b}/${segment}`;
+  const sep = /^[a-zA-Z]:\\/.test(b) || b.includes('\\') ? '\\' : '/';
+  return `${b}${sep}${segment}`;
 }
 
 function _getDefaultAnlScenarioRoot() {
