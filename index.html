@@ -892,7 +892,7 @@ a{color:var(--accent);text-decoration:none}
         <div class="form-group">
           <label for="anlScenarioRoot">Scenario Folder</label>
           <div class="u-flex-gap-4">
-            <input type="text" id="anlScenarioRoot" placeholder="(run_root)/scenario"
+                 <input type="text" id="anlScenarioRoot" placeholder="(run_root with \\run -> \\scenario)"
                    class="u-fill" oninput="onAnlScenarioRootInput()">
             <button type="button" class="btn btn-outline btn-sm"
                     onclick="refreshAnlScenarios()" title="Reload scenario list from this folder">
@@ -903,7 +903,8 @@ a{color:var(--accent);text-decoration:none}
               &#8962; Default
             </button>
           </div>
-          <div class="help-text">Defaults to <code>Simulation Run Folder + \\scenario</code>.
+          <div class="help-text">Defaults to replacing trailing <code>\\run</code> with <code>\\scenario</code>
+            (for example <code>C:\\LocalWork\\xAquaticRisk\\run</code> → <code>C:\\LocalWork\\xAquaticRisk\\scenario</code>).
             You can set a different absolute folder path to load scenarios from another location.</div>
         </div>
         <div class="form-row">
@@ -3082,7 +3083,16 @@ function _joinPath(base, segment) {
 }
 
 function _getDefaultAnlScenarioRoot() {
-  const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
+  const runRootRaw = (document.getElementById('anlRunRoot')?.value || '').trim();
+  const runRoot = runRootRaw.replace(/[\\/]+$/, '');
+  if (!runRoot) return 'scenario';
+
+  const hasWindowsSep = /^[a-zA-Z]:\\/.test(runRoot) || runRoot.includes('\\');
+  const trailingRunRegex = hasWindowsSep ? /\\run$/i : /\/run$/i;
+  if (trailingRunRegex.test(runRoot)) {
+    return runRoot.replace(trailingRunRegex, hasWindowsSep ? '\\scenario' : '/scenario');
+  }
+
   return _joinPath(runRoot, 'scenario');
 }
 
