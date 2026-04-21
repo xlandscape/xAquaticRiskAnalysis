@@ -889,6 +889,23 @@ a{color:var(--accent);text-decoration:none}
         <span>Scenario</span><span class="toggle">&#9660;</span>
       </div>
       <div class="card-body">
+        <div class="form-group">
+          <label for="anlScenarioRoot">Scenario Folder</label>
+          <div class="u-flex-gap-4">
+            <input type="text" id="anlScenarioRoot" placeholder="(run_root)/scenarios"
+                   class="u-fill" oninput="onAnlScenarioRootInput()">
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="refreshAnlScenarios()" title="Reload scenario list from this folder">
+              &#8635; Refresh
+            </button>
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="resetAnlScenarioRoot()" title="Reset to default scenario folder">
+              &#8962; Default
+            </button>
+          </div>
+          <div class="help-text">Defaults to <code>Simulation Run Folder + /scenarios</code>.
+            You can set a different absolute folder path to load scenarios from another location.</div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label for="anlScenario">Landscape Scenario</label>
@@ -3049,11 +3066,32 @@ const ANL_EXPOSURE_MODEL_LABELS = {
 let anlRunsData      = [];   // [{experiment, mcs:[{id,has_store}], landscape_scenario}]
 let anlCurrentJobId  = null;
 let anlPollTimer     = null;
+let _anlDefaultScenarioRoot = '';
+let _anlScenarioRootTouched = false;
 
 // ═══════════════════════════════════════════════════════════════════
 // Analysis – load runs + scenarios
 // ═══════════════════════════════════════════════════════════════════
 let _anlDefaultRunDir = '';
+
+function _joinPath(base, segment) {
+  const b = String(base || '').trim().replace(/[\\/]+$/, '');
+  if (!b) return segment;
+  return `${b}/${segment}`;
+}
+
+function _getDefaultAnlScenarioRoot() {
+  const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
+  return _joinPath(runRoot, 'scenarios');
+}
+
+function _syncAnlScenarioRootWithRunRoot() {
+  if (_anlScenarioRootTouched) return;
+  const scenarioRootInput = document.getElementById('anlScenarioRoot');
+  if (!scenarioRootInput) return;
+  _anlDefaultScenarioRoot = _getDefaultAnlScenarioRoot();
+  scenarioRootInput.value = _anlDefaultScenarioRoot;
+}
 
 async function loadAnlRuns() {
   // Pre-fill the run-root field with the server default (run/ folder) on first load
@@ -3065,6 +3103,7 @@ async function loadAnlRuns() {
       rootInput.value = _anlDefaultRunDir;
     } catch(e) { /* ignore */ }
   }
+  _syncAnlScenarioRootWithRunRoot();
   await refreshAnlRuns();
 }
 
@@ -3089,6 +3128,8 @@ async function refreshAnlRuns() {
     if (!anlRunsData.length) {
       showAnlStatus('No analysis-ready experiments found in the selected run folder.', 'warning');
     }
+    _syncAnlScenarioRootWithRunRoot();
+    await refreshAnlScenarios();
   } catch(e) {
     console.error('refreshAnlRuns', e);
     showAnlStatus(`Failed to load experiments: ${e.message}`, 'error');
@@ -3096,6 +3137,7 @@ async function refreshAnlRuns() {
 }
 
 function onAnlRunRootInput() {
+  _syncAnlScenarioRootWithRunRoot();
   // Debounce: refresh 600 ms after user stops typing
   clearTimeout(onAnlRunRootInput._t);
   onAnlRunRootInput._t = setTimeout(refreshAnlRuns, 600);
@@ -3104,20 +3146,56 @@ function onAnlRunRootInput() {
 function resetAnlRunRoot() {
   const rootInput = document.getElementById('anlRunRoot');
   rootInput.value = _anlDefaultRunDir;
+  _anlScenarioRootTouched = false;
+  _syncAnlScenarioRootWithRunRoot();
   refreshAnlRuns();
 }
 
-async function loadAnlScenarios() {
+function onAnlScenarioRootInput() {
+  _anlScenarioRootTouched = true;
+  clearTimeout(onAnlScenarioRootInput._t);
+  onAnlScenarioRootInput._t = setTimeout(refreshAnlScenarios, 600);
+}
+
+function resetAnlScenarioRoot() {
+  _anlScenarioRootTouched = false;
+  _syncAnlScenarioRootWithRunRoot();
+  refreshAnlScenarios();
+}
+
+async function refreshAnlScenarios() {
+  const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
+  const scenarioRoot = (document.getElementById('anlScenarioRoot')?.value || '').trim();
+  const params = new URLSearchParams();
+  if (runRoot) params.set('run_root', runRoot);
+  if (scenarioRoot) params.set('scenario_root', scenarioRoot);
+  const url = params.toString()
+    ? `/api/analysis/scenarios?${params.toString()}`
+    : '/api/analysis/scenarios';
+
+  const sel = document.getElementById('anlScenario');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Loading…</option>';
   try {
-    const scenarios = await api('/api/scenarios');
-    const sel = document.getElementById('anlScenario');
+    const scenarios = await api(url);
     sel.innerHTML = '<option value="">(none)</option>';
     scenarios.forEach(s => {
       const o = document.createElement('option');
-      o.value = s.path; o.textContent = s.name;
+      o.value = s.path;
+      o.textContent = s.name;
       sel.appendChild(o);
     });
-  } catch(e) { console.error('loadAnlScenarios', e); }
+    if (current && Array.from(sel.options).some(o => o.value === current)) {
+      sel.value = current;
+    }
+  } catch(e) {
+    console.error('refreshAnlScenarios', e);
+    sel.innerHTML = '<option value="">(failed to load scenarios)</option>';
+  }
+}
+
+async function loadAnlScenarios() {
+  return refreshAnlScenarios();
 }
 
 function onAnlExperimentChange() {

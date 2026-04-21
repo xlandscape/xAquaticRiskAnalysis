@@ -3370,6 +3370,31 @@ def list_runs_with_mcs(run_root):
     return result
 
 
+def list_analysis_scenarios(run_root: str, scenario_root: Optional[str] = None) -> list:
+    """List scenario folders from a configurable root.
+
+    Default root is <run_root>/scenarios.
+    """
+    run_root_abs = os.path.abspath(run_root)
+    if scenario_root and str(scenario_root).strip():
+        root = os.path.abspath(str(scenario_root).strip())
+    else:
+        root = os.path.join(run_root_abs, "scenarios")
+
+    if not os.path.isdir(root):
+        return []
+
+    scenarios = []
+    for name in sorted(os.listdir(root)):
+        abs_path = os.path.join(root, name)
+        if os.path.isdir(abs_path):
+            scenarios.append({
+                "name": name,
+                "path": abs_path,
+            })
+    return scenarios
+
+
 def analysis_job_status(job_id):
     """Return status dict for an analysis job."""
     with _analysis_lock:
@@ -3703,6 +3728,13 @@ class ControlPanelHandler(SimpleHTTPRequestHandler):
             run_root_raw = qs.get("run_root", [""])[0].strip()
             run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
             self._json_response(list_runs_with_mcs(run_root))
+        elif path == "/api/analysis/scenarios" or self.path.startswith("/api/analysis/scenarios?"):
+            qs = parse_qs(urlparse(self.path).query)
+            run_root_raw = qs.get("run_root", [""])[0].strip()
+            scenario_root_raw = qs.get("scenario_root", [""])[0].strip()
+            run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+            scenario_root = os.path.abspath(scenario_root_raw) if scenario_root_raw else ""
+            self._json_response(list_analysis_scenarios(run_root, scenario_root))
         elif path == "/api/analysis/exposure-models" or self.path.startswith("/api/analysis/exposure-models?"):
             qs = parse_qs(urlparse(self.path).query)
             experiment = qs.get("experiment", [""])[0].strip()
