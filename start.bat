@@ -2,6 +2,7 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
+set "NO_PAUSE=%XAQ_NO_PAUSE%"
 
 echo ============================================================
 echo xAquaticRisk Analysis Server
@@ -19,12 +20,18 @@ if exist "%SCRIPT_DIR%analysis\python\python.exe" (
 )
 where /q python.exe
 if errorlevel 1 (
-    echo ERROR: No Python found. Run setup_all.bat first.
+    call :fatal "No Python found. Run setup_all.bat first."
     exit /b 1
 )
 echo [..] Using system Python
 
 :check_rundir
+if not defined XAQ_RUN_DIR (
+    if exist "%SCRIPT_DIR%..\xAquaticRisk\run" set "XAQ_RUN_DIR=%SCRIPT_DIR%..\xAquaticRisk\run"
+)
+if not defined XAQ_RUN_DIR (
+    if exist "%SCRIPT_DIR%run" set "XAQ_RUN_DIR=%SCRIPT_DIR%run"
+)
 if not defined XAQ_RUN_DIR goto :no_rundir
 if not exist "%XAQ_RUN_DIR%" goto :bad_rundir
 
@@ -36,9 +43,20 @@ echo.
 goto :eof
 
 :no_rundir
-echo ERROR: XAQ_RUN_DIR is not set!
+call :fatal "XAQ_RUN_DIR is not set. Set XAQ_RUN_DIR to your xAquaticRisk run folder."
 exit /b 1
 
 :bad_rundir
-echo ERROR: Run directory does not exist: %XAQ_RUN_DIR%
+call :fatal "Run directory does not exist: %XAQ_RUN_DIR%"
 exit /b 1
+
+:fatal
+echo.
+echo ERROR: %~1
+echo.
+echo Hint:
+echo   1) Set environment variable XAQ_RUN_DIR
+echo   2) Or place xAquaticRiskAnalysis next to xAquaticRisk so auto-detection finds ..\xAquaticRisk\run
+if /I "%NO_PAUSE%"=="1" goto :eof
+pause
+goto :eof
