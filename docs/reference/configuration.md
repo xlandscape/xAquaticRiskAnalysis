@@ -10,7 +10,7 @@ xAquaticRiskAnalysis is configured through **environment variables** and **comma
 
 | | |
 |---|---|
-| **Required** | Yes — unless `--run-dir` is supplied on the command line |
+| **Required** | No for `start.bat` (defaults to `C:\`), Yes for direct `python server.py` unless `--run-dir` is supplied |
 | **Type** | Absolute path (string) |
 | **Example** | `C:\LocalWork\xAquaticRisk\run` |
 
@@ -36,13 +36,15 @@ start.bat
 4. Click **OK** and restart any open terminals
 
 **What happens if it is not set:**  
-`start.bat` validates the variable before launching the server. If `XAQ_RUN_DIR` is empty or not defined, the script prints an error message and exits with code 1, preventing a silently broken UI.
+`start.bat` defaults the run directory to `C:\`.
+Direct `python server.py` usage still requires either `XAQ_RUN_DIR` or `--run-dir`.
 
+```text
+[OK] Run folder : C:\
 ```
-ERROR: XAQ_RUN_DIR is not set.
-Set it to the path of the xAquaticRisk run/ folder before launching.
-Example:  set XAQ_RUN_DIR=C:\LocalWork\xAquaticRisk\run
-```
+
+!!! tip "When to run setup_all.bat"
+    `setup_all.bat` is optional in normal use. Run it only when the bundled runtime is missing or needs repair/rebuild.
 
 ---
 
@@ -103,6 +105,6 @@ python server.py --run-dir C:\LocalWork\xAquaticRisk\run --port 9000
 
 | Variable / Argument | Default | Required | Purpose |
 |---|---|---|---|
-| `XAQ_RUN_DIR` / `--run-dir` | *(none)* | **Yes** | Path to shared `run/` folder |
+| `XAQ_RUN_DIR` / `--run-dir` | `C:\` when using `start.bat`; *(none)* for direct `python server.py` | Usually no (`start.bat`), yes for direct server launch unless `--run-dir` is set | Path to shared `run/` folder |
 | `XAQ_PORT` / `--port` | `8091` | No | HTTP server port |
 | `XAQ_ANALYSIS_MODE` | `local` | No | Analysis execution mode |

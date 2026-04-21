@@ -6,6 +6,9 @@
 - **Python 3.9 or later** — only needed if you are *not* using the bundled `analysis/python/` runtime
 - A completed xAquaticRisk simulation in a `run/` folder that you have read access to
 
+If the bundled runtime is already present and `start.bat` works, you do **not** need to run `setup_all.bat`.
+Use `setup_all.bat` only to rebuild or repair the bundled runtime.
+
 ---
 
 ## Step 1: Get xAquaticRiskAnalysis
@@ -25,7 +28,7 @@ cd xAquaticRiskAnalysis
 
 ---
 
-## Step 2: Set `XAQ_RUN_DIR`
+## Step 2: (Optional) Set `XAQ_RUN_DIR`
 
 xAquaticRiskAnalysis needs to know where xAquaticRisk writes its simulation output.  
 You tell it by setting the [`XAQ_RUN_DIR`](../reference/configuration.md#xaq_run_dir) environment variable to the absolute path of the `run/` folder.
@@ -38,7 +41,9 @@ set XAQ_RUN_DIR=C:\LocalWork\xAquaticRisk\run
     To avoid typing this every session, add `XAQ_RUN_DIR` as a **persistent user environment variable**:  
     *Windows → Start → "Edit environment variables for your account" → New → Name: `XAQ_RUN_DIR`, Value: your path*
 
-If `XAQ_RUN_DIR` is not set, `start.bat` will print an error and exit before starting the server.  
+If `XAQ_RUN_DIR` is not set, `start.bat` now defaults to `C:\`.  
+For most users, setting `XAQ_RUN_DIR` is still recommended so the UI opens directly on the correct run folder.
+
 See [Configuration](../reference/configuration.md) for all supported variables.
 
 ---
@@ -55,7 +60,7 @@ start.bat
 
 The server starts on port **8091** by default. Open your browser and navigate to:
 
-```
+```text
 http://localhost:8091
 ```
 
@@ -101,6 +106,12 @@ python server.py
 
 REM Terminal 2 — xAquaticRiskAnalysis server (port 8091)
 cd C:\LocalWork\xAquaticRiskAnalysis
+start.bat
+```
+
+You can still set `XAQ_RUN_DIR` explicitly if you want a specific default run folder:
+
+```bat
 set XAQ_RUN_DIR=C:\LocalWork\xAquaticRisk\run
 start.bat
 ```

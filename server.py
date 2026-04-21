@@ -99,6 +99,12 @@ ANALYSIS_REQUIRED_MODULES = [
 PORT_ENV = "XAQ_PORT"
 PORT = int(os.environ.get(PORT_ENV, "8091"))
 RUN_DIR_ENV = "XAQ_RUN_DIR"
+SCENARIO_DIR = os.path.join(BASE_DIR, "scenario")
+OUTPUT_DIR = BASE_DIR
+TEMPLATE_PATH = os.path.join(OUTPUT_DIR, "template.xrun")
+DEFAULT_UI_PROFILE = "analysis"
+UI_PROFILE_ENV = "XAQ_UI_PROFILE"
+VALID_UI_PROFILES = {"all", "prep", "analysis"}
 HYDRO_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 HYDRO_ARRAY_DATASETS = ("flow", "depth", "volume", "area")
 
@@ -496,18 +502,16 @@ def check_controlpanel_portable():
 
 
 def get_self_contained_runtime_status() -> dict:
-    """Return deployment status for bundled runtimes required by controlpanel."""
+    """Return deployment status for bundled runtimes required by analysis server."""
     analysis = check_analysis_portable()
+    # Keep these fields for compatibility with existing API consumers, but do
+    # not treat them as blockers in the standalone analysis repository.
     controlpanel = check_controlpanel_portable()
     model_runtime = os.path.isfile(os.path.join(BASE_DIR, "model", "core", "bin", "python-3.9.7-amd64", "python.exe"))
 
     warnings = []
-    if not controlpanel.get("ready"):
-        warnings.append(controlpanel.get("details") or "Controlpanel runtime is not ready.")
     if not analysis.get("ready"):
         warnings.append(analysis.get("details") or "Analysis runtime is not ready.")
-    if not model_runtime:
-        warnings.append("model/core/bin/python-3.9.7-amd64/python.exe not found. Simulation launch via __start__.bat may fail.")
 
     return {
         "status": "ready" if not warnings else "incomplete",
@@ -815,12 +819,41 @@ def _resolve_scenario_path(scenario_path: str) -> tuple[str, str]:
     return rel, abs_path
 
 
-def _resolve_run_metadata_scenario_path(scenario_path: str, run_dir: Optional[str] = None) -> tuple[str, str]:
+def _derive_default_scenario_root(run_root: str) -> str:
+    run_root_abs = os.path.abspath(run_root)
+    run_root_norm = os.path.normpath(run_root_abs)
+    if os.path.basename(run_root_norm).lower() == "run":
+        return os.path.join(os.path.dirname(run_root_norm), "scenario")
+    return os.path.join(run_root_abs, "scenario")
+
+
+def _resolve_run_metadata_scenario_path(
+    scenario_path: str,
+    run_dir: Optional[str] = None,
+    run_root: Optional[str] = None,
+) -> tuple[str, str]:
     raw = (scenario_path or "").strip()
     if not raw:
         raise FileNotFoundError("Scenario path is missing in run metadata")
 
     candidates = []
+    scenario_roots = []
+
+    def _add_root(path_value: str):
+        if not path_value:
+            return
+        abs_root = os.path.abspath(path_value)
+        if abs_root not in scenario_roots:
+            scenario_roots.append(abs_root)
+
+    _add_root(SCENARIO_DIR)
+    if run_root:
+        _add_root(_derive_default_scenario_root(run_root))
+    if run_dir:
+        run_dir_abs = os.path.abspath(run_dir)
+        parent = os.path.dirname(run_dir_abs)
+        if os.path.basename(parent).lower() == "run":
+            _add_root(os.path.join(os.path.dirname(parent), "scenario"))
 
     def _add_candidate(path_value: str):
         abs_value = os.path.abspath(path_value)
@@ -837,21 +870,30 @@ def _resolve_run_metadata_scenario_path(scenario_path: str, run_dir: Optional[st
         if normalized.startswith("./"):
             normalized = normalized[2:]
         if normalized.startswith("scenario/"):
+            tail = normalized[len("scenario/"):]
             _add_candidate(os.path.join(BASE_DIR, normalized))
+            for root in scenario_roots:
+                _add_candidate(os.path.join(root, tail))
         else:
-            _add_candidate(os.path.join(SCENARIO_DIR, normalized))
+            for root in scenario_roots:
+                _add_candidate(os.path.join(root, normalized))
 
-    inside_scenario_dir = False
     for candidate in candidates:
-        if candidate == SCENARIO_DIR or candidate.startswith(SCENARIO_DIR + os.sep):
-            inside_scenario_dir = True
-            if os.path.isdir(candidate):
+        if os.path.isdir(candidate):
+            rel = None
+            for root in scenario_roots:
+                try:
+                    rel_part = os.path.relpath(candidate, root)
+                    if not rel_part.startswith(".."):
+                        rel = os.path.join("scenario", rel_part).replace("\\", "/")
+                        break
+                except ValueError:
+                    continue
+            if rel is None:
                 rel = os.path.relpath(candidate, BASE_DIR).replace("\\", "/")
-                return rel, candidate
+            return rel, candidate
 
-    if inside_scenario_dir:
-        raise FileNotFoundError(f"Scenario folder not found: {raw}")
-    raise ValueError("Invalid scenario path")
+    raise FileNotFoundError(f"Scenario folder not found: {raw}")
 
 
 def _validate_subset_scenario_name(name: str) -> str:
@@ -2464,7 +2506,11 @@ def _resolve_mc_store_paths(run_root, experiment, mc_run):
         or params.get("Scenario/Project")
         or ""
     ).strip()
-    scenario_rel, scenario_path = _resolve_run_metadata_scenario_path(scenario_rel, run_path)
+    scenario_rel, scenario_path = _resolve_run_metadata_scenario_path(
+        scenario_rel,
+        run_dir=run_path,
+        run_root=run_root_abs,
+    )
 
     return {
         "run_path": run_path,
@@ -3372,6 +3418,36 @@ def list_runs_with_mcs(run_root):
     return result
 
 
+def list_analysis_scenarios(run_root: str, scenario_root: Optional[str] = None) -> list:
+    """List scenario folders from a configurable root.
+
+    Default root replaces trailing 'run' with 'scenario' if run_root ends
+    in a run folder. Otherwise it falls back to <run_root>/scenario.
+    """
+    run_root_abs = os.path.abspath(run_root)
+    if scenario_root and str(scenario_root).strip():
+        root = os.path.abspath(str(scenario_root).strip())
+    else:
+        run_root_norm = os.path.normpath(run_root_abs)
+        if os.path.basename(run_root_norm).lower() == "run":
+            root = os.path.join(os.path.dirname(run_root_norm), "scenario")
+        else:
+            root = os.path.join(run_root_abs, "scenario")
+
+    if not os.path.isdir(root):
+        return []
+
+    scenarios = []
+    for name in sorted(os.listdir(root)):
+        abs_path = os.path.join(root, name)
+        if os.path.isdir(abs_path):
+            scenarios.append({
+                "name": name,
+                "path": abs_path,
+            })
+    return scenarios
+
+
 def analysis_job_status(job_id):
     """Return status dict for an analysis job."""
     with _analysis_lock:
@@ -3599,8 +3675,8 @@ def tail_log(run_root, run_id, log_name, tail_lines=200):
 class ControlPanelHandler(SimpleHTTPRequestHandler):
     """Serves the integrated control-panel SPA and all JSON APIs."""
 
-    run_root = DEFAULT_RUN_DIR
-    ui_profile = DEFAULT_UI_PROFILE
+    run_root = None
+    ui_profile = {}
 
     def __init__(self, *args, **kwargs):
         self._webdir = os.path.dirname(os.path.abspath(__file__))
@@ -3705,6 +3781,13 @@ class ControlPanelHandler(SimpleHTTPRequestHandler):
             run_root_raw = qs.get("run_root", [""])[0].strip()
             run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
             self._json_response(list_runs_with_mcs(run_root))
+        elif path == "/api/analysis/scenarios" or self.path.startswith("/api/analysis/scenarios?"):
+            qs = parse_qs(urlparse(self.path).query)
+            run_root_raw = qs.get("run_root", [""])[0].strip()
+            scenario_root_raw = qs.get("scenario_root", [""])[0].strip()
+            run_root = os.path.abspath(run_root_raw) if run_root_raw else self.run_root
+            scenario_root = os.path.abspath(scenario_root_raw) if scenario_root_raw else ""
+            self._json_response(list_analysis_scenarios(run_root, scenario_root))
         elif path == "/api/analysis/exposure-models" or self.path.startswith("/api/analysis/exposure-models?"):
             qs = parse_qs(urlparse(self.path).query)
             experiment = qs.get("experiment", [""])[0].strip()

@@ -232,7 +232,7 @@ a{color:var(--accent);text-decoration:none}
 .expl-map{width:100%;height:500px;background:var(--bg);border:1px solid var(--border);border-radius:6px;position:relative;overflow:hidden}
 #explLabelCanvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4}
 .expl-chart{width:100%;height:500px;background:var(--bg);border:1px solid var(--border);border-radius:6px}
-.expl-toolbar{display:grid;grid-template-columns:2fr 1fr 1fr auto auto;gap:.6rem;align-items:end}
+.expl-toolbar{display:grid;grid-template-columns:2fr 1.3fr 1fr 1fr 1fr auto auto;gap:.6rem;align-items:end}
 .expl-selection{font-size:.78rem;color:var(--text2);margin-top:.55rem}
 .expl-selection strong{color:var(--text)}
 .expl-chip-list{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.45rem;max-height:90px;overflow:auto}
@@ -306,18 +306,18 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════ TOP BAR ══════════ -->
 <div class="topbar">
   <h1>xAquaticRisk</h1>
-  <span class="tag" id="uiTag">Control Panel</span>
+  <span class="tag" id="uiTag">Analysis &amp; Exploration</span>
 
   <div class="tab-strip">
-    <button class="tab-btn active" onclick="switchTab('configure')" id="tabConfigure">
+    <button class="tab-btn u-hidden" onclick="switchTab('configure')" id="tabConfigure">
       <svg viewBox="0 0 16 16"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/></svg>
       Parameterisation
     </button>
-    <button class="tab-btn" onclick="switchTab('monitor')" id="tabMonitor">
+    <button class="tab-btn u-hidden" onclick="switchTab('monitor')" id="tabMonitor">
       <svg viewBox="0 0 16 16"><path d="M1 3.5A1.5 1.5 0 012.5 2h11A1.5 1.5 0 0115 3.5v9a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9zm1.5-.5a.5.5 0 00-.5.5v9a.5.5 0 00.5.5h11a.5.5 0 00.5-.5v-9a.5.5 0 00-.5-.5h-11z"/><path d="M3 5.5a.5.5 0 01.5-.5h9a.5.5 0 010 1h-9a.5.5 0 01-.5-.5zM3 8a.5.5 0 01.5-.5h5a.5.5 0 010 1h-5A.5.5 0 013 8zm0 2.5a.5.5 0 01.5-.5h3a.5.5 0 010 1h-3a.5.5 0 01-.5-.5z"/></svg>
       Monitoring
     </button>
-    <button class="tab-btn" onclick="switchTab('analysis')" id="tabAnalysis">
+    <button class="tab-btn active" onclick="switchTab('analysis')" id="tabAnalysis">
       <svg viewBox="0 0 16 16"><path d="M0 0h1v15h15v1H0V0zm10 3.5a.5.5 0 01.5-.5h4a.5.5 0 01.5.5v4a.5.5 0 01-1 0V4.9l-3.613 4.417a.5.5 0 01-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 01-.808-.588l4-5.5a.5.5 0 01.758-.06l2.609 2.61L13.445 4H10.5a.5.5 0 01-.5-.5z"/></svg>
       Analysis
     </button>
@@ -325,7 +325,7 @@ a{color:var(--accent);text-decoration:none}
       <svg viewBox="0 0 16 16"><path d="M15.817.113A.5.5 0 0 0 15.31 0h-.083a.5.5 0 0 0-.238.06L10.5 2.31 6 0 1.276 2.362A.5.5 0 0 0 1 2.81v12.69a.5.5 0 0 0 .724.447L6 13.69l4.5 2.25 4.724-2.362a.5.5 0 0 0 .276-.447V.5a.5.5 0 0 0-.183-.387zM6.5 1.31l3 1.5v11.88l-3-1.5V1.31zm-1 11.88-3 1.5V3.31l3-1.5v11.38zm8 0-3 1.5V2.81l3-1.5v11.88z"/></svg>
       Explorer
     </button>
-    <button class="tab-btn" onclick="switchTab('landscape')" id="tabLandscape">
+    <button class="tab-btn u-hidden" onclick="switchTab('landscape')" id="tabLandscape">
       <svg viewBox="0 0 16 16"><path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/><path d="M1.5 2A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13zm13 1a.5.5 0 0 1 .5.5v6l-3.775-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12v.54A.505.505 0 0 1 1 12.5v-9a.5.5 0 0 1 .5-.5h13z"/></svg>
       Landscape Scenario
     </button>
@@ -339,7 +339,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      CONFIGURE PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page active" id="pageConfigure">
+<div class="page u-hidden" id="pageConfigure">
   <div class="cfg-wrap">
 
     <!-- Parameterisation (xrun-) File Operations -->
@@ -706,7 +706,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      LANDSCAPE SCENARIO PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="pageLandscape">
+<div class="page u-hidden" id="pageLandscape">
   <div class="cfg-wrap">
 
     <div class="card">
@@ -817,7 +817,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      MONITOR PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="pageMonitor">
+<div class="page u-hidden" id="pageMonitor">
   <div class="mon-layout">
     <div class="sidebar">
       <div class="sidebar-header">
@@ -839,7 +839,7 @@ a{color:var(--accent);text-decoration:none}
 <!-- ══════════════════════════════════════════════════════════════════
      ANALYSIS PAGE
      ══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="pageAnalysis">
+<div class="page active" id="pageAnalysis">
   <div class="cfg-wrap">
 
     <!-- ─ Run Selection ─────────────────────────────────────────────── -->
@@ -889,6 +889,24 @@ a{color:var(--accent);text-decoration:none}
         <span>Scenario</span><span class="toggle">&#9660;</span>
       </div>
       <div class="card-body">
+        <div class="form-group">
+          <label for="anlScenarioRoot">Scenario Folder</label>
+          <div class="u-flex-gap-4">
+                 <input type="text" id="anlScenarioRoot" placeholder="(run_root with \\run -> \\scenario)"
+                   class="u-fill" oninput="onAnlScenarioRootInput()">
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="refreshAnlScenarios()" title="Reload scenario list from this folder">
+              &#8635; Refresh
+            </button>
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="resetAnlScenarioRoot()" title="Reset to default scenario folder">
+              &#8962; Default
+            </button>
+          </div>
+          <div class="help-text">Defaults to replacing trailing <code>\\run</code> with <code>\\scenario</code>
+            (for example <code>C:\\LocalWork\\xAquaticRisk\\run</code> → <code>C:\\LocalWork\\xAquaticRisk\\scenario</code>).
+            You can set a different absolute folder path to load scenarios from another location.</div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label for="anlScenario">Landscape Scenario</label>
@@ -1053,8 +1071,20 @@ a{color:var(--accent);text-decoration:none}
       <div class="card-body">
         <div class="expl-toolbar">
           <div class="form-group u-form-group-mb0">
-            <label for="explRunSelect">Run / MC Selection</label>
-            <select id="explRunSelect"></select>
+            <label for="explRunRoot">Simulation Run Folder</label>
+            <div class="u-flex-gap-4">
+              <input type="text" id="explRunRoot" class="u-fill" placeholder="run/" oninput="onExplRunRootInput()">
+              <button type="button" class="btn btn-outline btn-sm" onclick="refreshExplorerRuns()" title="Reload runs from this folder">&#8635;</button>
+              <button type="button" class="btn btn-outline btn-sm" onclick="resetExplRunRoot()" title="Use Analysis run folder">&#8962;</button>
+            </div>
+          </div>
+          <div class="form-group u-form-group-mb0">
+            <label for="explExperiment">Experiment</label>
+            <select id="explExperiment" onchange="onExplExperimentChange()"></select>
+          </div>
+          <div class="form-group u-form-group-mb0">
+            <label for="explMcRun">Monte Carlo Run</label>
+            <select id="explMcRun" onchange="onExplMcRunChange()"></select>
           </div>
           <div class="form-group u-form-group-mb0">
             <label for="explResolution">Resolution</label>
@@ -1205,16 +1235,16 @@ const UI_PROFILES = {
   },
 };
 
-let uiProfileName = 'all';
-let uiAllowedTabs = new Set(UI_PROFILES.all.allowedTabs);
+let uiProfileName = 'analysis';
+let uiAllowedTabs = new Set(UI_PROFILES.analysis.allowedTabs);
 
 function normalizeUiProfileName(raw) {
   const name = String(raw || '').trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(UI_PROFILES, name) ? name : 'all';
+  return Object.prototype.hasOwnProperty.call(UI_PROFILES, name) ? name : 'analysis';
 }
 
 function getUiProfileSpec(name) {
-  return UI_PROFILES[normalizeUiProfileName(name)] || UI_PROFILES.all;
+  return UI_PROFILES[normalizeUiProfileName(name)] || UI_PROFILES.analysis;
 }
 
 function uiTabAllowed(name) {
@@ -1222,7 +1252,7 @@ function uiTabAllowed(name) {
 }
 
 function configureUiProfile(profilePayload) {
-  uiProfileName = normalizeUiProfileName(profilePayload?.profile);
+  uiProfileName = 'analysis';
   const spec = getUiProfileSpec(uiProfileName);
   uiAllowedTabs = new Set(spec.allowedTabs);
 
@@ -1242,13 +1272,7 @@ function configureUiProfile(profilePayload) {
 }
 
 async function loadUiProfile() {
-  try {
-    const profile = await api('/api/ui/profile');
-    return configureUiProfile(profile || { profile: 'all' });
-  } catch (e) {
-    console.warn('Failed to load UI profile; falling back to all profile.', e);
-    return configureUiProfile({ profile: 'all' });
-  }
+  return configureUiProfile({ profile: 'analysis' });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2452,28 +2476,31 @@ function updateExplorerSelectionUi() {
 }
 
 function getExplorerRunRoot() {
-  const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
-  return runRoot;
+  return (document.getElementById('explRunRoot')?.value || '').trim();
 }
 
 function currentExplorerSelection() {
-  const sel = document.getElementById('explRunSelect');
-  const val = sel?.value || '';
-  if (!val || !val.includes('||')) return null;
-  const [experiment, mc_run] = val.split('||');
+  const experiment = document.getElementById('explExperiment')?.value || '';
+  const mc_run = document.getElementById('explMcRun')?.value || '';
+  if (!experiment || !mc_run) return null;
   return { experiment, mc_run };
 }
 
 function getExplorerRunEntry() {
   const chosen = currentExplorerSelection();
   if (!chosen) return null;
-  return explRuns.find(r =>
-    r.experiment === chosen.experiment && (r.mcs || []).some(mc => mc.id === chosen.mc_run)
-  ) || null;
+  return explRuns.find(r => r.experiment === chosen.experiment) || null;
+}
+
+function getExplorerMcEntry() {
+  const chosen = currentExplorerSelection();
+  const entry = getExplorerRunEntry();
+  if (!chosen || !entry) return null;
+  return (entry.mcs || []).find(mc => mc.id === chosen.mc_run) || null;
 }
 
 function applyExplorerSimulationPeriod(force = false) {
-  const selectedOption = document.getElementById('explRunSelect')?.selectedOptions?.[0] || null;
+  const selectedOption = document.getElementById('explMcRun')?.selectedOptions?.[0] || null;
   const startValue = selectedOption?.dataset?.simulationStart || '';
   const endValue = selectedOption?.dataset?.simulationEnd || '';
   const entry = (!startValue && !endValue) ? getExplorerRunEntry() : null;
@@ -2487,6 +2514,58 @@ function applyExplorerSimulationPeriod(force = false) {
   if (toEl && simulationEnd && (force || !toEl.value.trim())) {
     toEl.value = simulationEnd;
   }
+}
+
+function syncExplorerDefaultsFromAnalysis(force = false) {
+  const explRunRoot = document.getElementById('explRunRoot');
+  const anlRunRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
+  if (explRunRoot && (force || !explRunRoot.value.trim())) {
+    explRunRoot.value = anlRunRoot;
+  }
+}
+
+function onExplRunRootInput() {
+  clearTimeout(onExplRunRootInput._t);
+  onExplRunRootInput._t = setTimeout(() => refreshExplorerRuns(), 600);
+}
+
+function resetExplRunRoot() {
+  syncExplorerDefaultsFromAnalysis(true);
+  refreshExplorerRuns();
+}
+
+function renderExplorerMcOptions(entry, preferredMc = '') {
+  const mcSel = document.getElementById('explMcRun');
+  if (!mcSel) return;
+  mcSel.innerHTML = '<option value="">Select MC run...</option>';
+  for (const mc of entry?.mcs || []) {
+    const option = document.createElement('option');
+    option.value = mc.id;
+    option.dataset.simulationStart = entry?.simulation_start || '';
+    option.dataset.simulationEnd = entry?.simulation_end || '';
+    option.textContent = mc.id;
+    mcSel.appendChild(option);
+  }
+  const analysisMc = (document.getElementById('anlMcRun')?.value || '').trim();
+  const targetMc = preferredMc || analysisMc;
+  if (targetMc && Array.from(mcSel.options).some(o => o.value === targetMc)) {
+    mcSel.value = targetMc;
+  } else if (mcSel.options.length > 1) {
+    mcSel.selectedIndex = 1;
+  }
+}
+
+function onExplExperimentChange() {
+  const expSel = document.getElementById('explExperiment');
+  const entry = explRuns.find(r => r.experiment === expSel?.value) || null;
+  renderExplorerMcOptions(entry);
+  applyExplorerSimulationPeriod(true);
+  reloadExplorerData();
+}
+
+function onExplMcRunChange() {
+  applyExplorerSimulationPeriod(true);
+  reloadExplorerData();
 }
 
 function ensureExplorerMap() {
@@ -2570,26 +2649,40 @@ function ensureExplorerMap() {
 }
 
 async function loadExplorerRuns() {
-  const sel = document.getElementById('explRunSelect');
-  if (!sel) return;
+  const expSel = document.getElementById('explExperiment');
+  const mcSel = document.getElementById('explMcRun');
+  if (!expSel || !mcSel) return;
+  syncExplorerDefaultsFromAnalysis();
   const runRoot = getExplorerRunRoot();
   const url = runRoot
     ? `/api/map-explorer/runs?run_root=${encodeURIComponent(runRoot)}`
     : '/api/map-explorer/runs';
   const renderRunOptions = (runs) => {
     explRuns = runs;
-    sel.innerHTML = '<option value="">Select run / MC...</option>';
+    const currentExp = expSel.value;
+    const currentMc = mcSel.value;
+    expSel.innerHTML = '<option value="">Select experiment...</option>';
+    const seen = new Set();
     for (const item of runs) {
-      for (const mc of item.mcs || []) {
-        const option = document.createElement('option');
-        option.value = `${item.experiment}||${mc.id}`;
-        option.dataset.simulationStart = item.simulation_start || '';
-        option.dataset.simulationEnd = item.simulation_end || '';
-        const marker = item.geometry_available ? '' : ' [no geometry]';
-        option.textContent = `${item.experiment} / ${mc.id} (${item.scenario_name})${marker}`;
-        sel.appendChild(option);
-      }
+      if (seen.has(item.experiment)) continue;
+      seen.add(item.experiment);
+      const option = document.createElement('option');
+      const marker = item.geometry_available ? '' : ' [no geometry]';
+      option.value = item.experiment;
+      option.textContent = `${item.experiment} (${item.scenario_name || 'unknown'})${marker}`;
+      expSel.appendChild(option);
     }
+
+    const analysisExp = (document.getElementById('anlExperiment')?.value || '').trim();
+    const preferredExp = currentExp || analysisExp;
+    if (preferredExp && Array.from(expSel.options).some(o => o.value === preferredExp)) {
+      expSel.value = preferredExp;
+    } else if (expSel.options.length > 1) {
+      expSel.selectedIndex = 1;
+    }
+
+    const selectedEntry = explRuns.find(r => r.experiment === expSel.value) || null;
+    renderExplorerMcOptions(selectedEntry, currentMc);
   };
 
   try {
@@ -2597,12 +2690,10 @@ async function loadExplorerRuns() {
     const runs = response.runs || [];
     renderRunOptions(runs);
     if (!runs.length) {
-      sel.innerHTML = '<option value="">No compatible runs found</option>';
+      expSel.innerHTML = '<option value="">No compatible runs found</option>';
+      mcSel.innerHTML = '<option value="">No compatible runs found</option>';
       showExplStatus('No compatible runs found. Run analysis-capable experiments first.', 'error');
       return;
-    }
-    if (!sel.value && sel.options.length > 1) {
-      sel.selectedIndex = 1;
     }
     applyExplorerSimulationPeriod(true);
     await reloadExplorerData();
@@ -2624,12 +2715,10 @@ async function loadExplorerRuns() {
 
       renderRunOptions(mapped);
       if (!mapped.length) {
-        sel.innerHTML = '<option value="">No compatible runs found</option>';
+        expSel.innerHTML = '<option value="">No compatible runs found</option>';
+        mcSel.innerHTML = '<option value="">No compatible runs found</option>';
         showExplStatus('No compatible runs found. ' + primaryError.message, 'error');
         return;
-      }
-      if (!sel.value && sel.options.length > 1) {
-        sel.selectedIndex = 1;
       }
       applyExplorerSimulationPeriod(true);
       showExplStatus('Explorer loaded via compatibility fallback. Please restart control panel to use new map API.', 'success');
@@ -2638,6 +2727,10 @@ async function loadExplorerRuns() {
       showExplStatus('Failed to load explorer runs: ' + primaryError.message + ' | fallback failed: ' + fallbackError.message, 'error');
     }
   }
+}
+
+function refreshExplorerRuns() {
+  return loadExplorerRuns();
 }
 
 function setExplorerSelectionSource() {
@@ -2977,14 +3070,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   checkAnalysisPortableStatus();
 
-  const explRun = document.getElementById('explRunSelect');
   const explRes = document.getElementById('explResolution');
   const explFrom = document.getElementById('explTimeFrom');
   const explTo = document.getElementById('explTimeTo');
-  if (explRun) explRun.addEventListener('change', () => {
-    applyExplorerSimulationPeriod(true);
-    reloadExplorerData();
-  });
   if (explRes) explRes.addEventListener('change', () => loadExplorerTimeseries());
   if (explFrom) explFrom.addEventListener('change', () => loadExplorerTimeseries());
   if (explTo) explTo.addEventListener('change', () => loadExplorerTimeseries());
@@ -3055,11 +3143,42 @@ const ANL_EXPOSURE_MODEL_LABELS = {
 let anlRunsData      = [];   // [{experiment, mcs:[{id,has_store}], landscape_scenario}]
 let anlCurrentJobId  = null;
 let anlPollTimer     = null;
+let _anlDefaultScenarioRoot = '';
+let _anlScenarioRootTouched = false;
 
 // ═══════════════════════════════════════════════════════════════════
 // Analysis – load runs + scenarios
 // ═══════════════════════════════════════════════════════════════════
 let _anlDefaultRunDir = '';
+
+function _joinPath(base, segment) {
+  const b = String(base || '').trim().replace(/[\\/]+$/, '');
+  if (!b) return segment;
+  const sep = /^[a-zA-Z]:\\/.test(b) || b.includes('\\') ? '\\' : '/';
+  return `${b}${sep}${segment}`;
+}
+
+function _getDefaultAnlScenarioRoot() {
+  const runRootRaw = (document.getElementById('anlRunRoot')?.value || '').trim();
+  const runRoot = runRootRaw.replace(/[\\/]+$/, '');
+  if (!runRoot) return 'scenario';
+
+  const hasWindowsSep = /^[a-zA-Z]:\\/.test(runRoot) || runRoot.includes('\\');
+  const trailingRunRegex = hasWindowsSep ? /\\run$/i : /\/run$/i;
+  if (trailingRunRegex.test(runRoot)) {
+    return runRoot.replace(trailingRunRegex, hasWindowsSep ? '\\scenario' : '/scenario');
+  }
+
+  return _joinPath(runRoot, 'scenario');
+}
+
+function _syncAnlScenarioRootWithRunRoot() {
+  if (_anlScenarioRootTouched) return;
+  const scenarioRootInput = document.getElementById('anlScenarioRoot');
+  if (!scenarioRootInput) return;
+  _anlDefaultScenarioRoot = _getDefaultAnlScenarioRoot();
+  scenarioRootInput.value = _anlDefaultScenarioRoot;
+}
 
 async function loadAnlRuns() {
   // Pre-fill the run-root field with the server default (run/ folder) on first load
@@ -3071,6 +3190,7 @@ async function loadAnlRuns() {
       rootInput.value = _anlDefaultRunDir;
     } catch(e) { /* ignore */ }
   }
+  _syncAnlScenarioRootWithRunRoot();
   await refreshAnlRuns();
 }
 
@@ -3095,6 +3215,8 @@ async function refreshAnlRuns() {
     if (!anlRunsData.length) {
       showAnlStatus('No analysis-ready experiments found in the selected run folder.', 'warning');
     }
+    _syncAnlScenarioRootWithRunRoot();
+    await refreshAnlScenarios();
   } catch(e) {
     console.error('refreshAnlRuns', e);
     showAnlStatus(`Failed to load experiments: ${e.message}`, 'error');
@@ -3102,6 +3224,7 @@ async function refreshAnlRuns() {
 }
 
 function onAnlRunRootInput() {
+  _syncAnlScenarioRootWithRunRoot();
   // Debounce: refresh 600 ms after user stops typing
   clearTimeout(onAnlRunRootInput._t);
   onAnlRunRootInput._t = setTimeout(refreshAnlRuns, 600);
@@ -3110,20 +3233,56 @@ function onAnlRunRootInput() {
 function resetAnlRunRoot() {
   const rootInput = document.getElementById('anlRunRoot');
   rootInput.value = _anlDefaultRunDir;
+  _anlScenarioRootTouched = false;
+  _syncAnlScenarioRootWithRunRoot();
   refreshAnlRuns();
 }
 
-async function loadAnlScenarios() {
+function onAnlScenarioRootInput() {
+  _anlScenarioRootTouched = true;
+  clearTimeout(onAnlScenarioRootInput._t);
+  onAnlScenarioRootInput._t = setTimeout(refreshAnlScenarios, 600);
+}
+
+function resetAnlScenarioRoot() {
+  _anlScenarioRootTouched = false;
+  _syncAnlScenarioRootWithRunRoot();
+  refreshAnlScenarios();
+}
+
+async function refreshAnlScenarios() {
+  const runRoot = (document.getElementById('anlRunRoot')?.value || '').trim();
+  const scenarioRoot = (document.getElementById('anlScenarioRoot')?.value || '').trim();
+  const params = new URLSearchParams();
+  if (runRoot) params.set('run_root', runRoot);
+  if (scenarioRoot) params.set('scenario_root', scenarioRoot);
+  const url = params.toString()
+    ? `/api/analysis/scenarios?${params.toString()}`
+    : '/api/analysis/scenarios';
+
+  const sel = document.getElementById('anlScenario');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Loading…</option>';
   try {
-    const scenarios = await api('/api/scenarios');
-    const sel = document.getElementById('anlScenario');
+    const scenarios = await api(url);
     sel.innerHTML = '<option value="">(none)</option>';
     scenarios.forEach(s => {
       const o = document.createElement('option');
-      o.value = s.path; o.textContent = s.name;
+      o.value = s.path;
+      o.textContent = s.name;
       sel.appendChild(o);
     });
-  } catch(e) { console.error('loadAnlScenarios', e); }
+    if (current && Array.from(sel.options).some(o => o.value === current)) {
+      sel.value = current;
+    }
+  } catch(e) {
+    console.error('refreshAnlScenarios', e);
+    sel.innerHTML = '<option value="">(failed to load scenarios)</option>';
+  }
+}
+
+async function loadAnlScenarios() {
+  return refreshAnlScenarios();
 }
 
 function onAnlExperimentChange() {
