@@ -39,7 +39,7 @@ start.bat
 `start.bat` defaults the run directory to `C:\`.
 Direct `python server.py` usage still requires either `XAQ_RUN_DIR` or `--run-dir`.
 
-```
+```text
 [OK] Run folder : C:\
 ```
 

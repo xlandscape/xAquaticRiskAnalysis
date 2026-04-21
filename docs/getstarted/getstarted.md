@@ -60,7 +60,7 @@ start.bat
 
 The server starts on port **8091** by default. Open your browser and navigate to:
 
-```
+```text
 http://localhost:8091
 ```
 
