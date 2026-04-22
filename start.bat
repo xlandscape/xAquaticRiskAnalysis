@@ -26,17 +26,9 @@ if errorlevel 1 (
 echo [..] Using system Python
 
 :check_rundir
-if not defined XAQ_RUN_DIR (
-    echo.
-    echo ERROR: XAQ_RUN_DIR is not set.
-    echo.
-    echo Hint: Set XAQ_RUN_DIR to the xAquaticRisk run folder before starting, e.g.:
-    echo   set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
-    echo.
-    if /I "%NO_PAUSE%"=="1" exit /b 1
-    pause
-    exit /b 1
-)
+REM -- Default to C:\ so the user can browse to any run folder via the Web UI.
+REM    Set XAQ_RUN_DIR to a specific run folder to override the starting browse root.
+if not defined XAQ_RUN_DIR set "XAQ_RUN_DIR=C:\"
 if not exist "%XAQ_RUN_DIR%" goto :bad_rundir
 
 echo [OK] Run folder : %XAQ_RUN_DIR%
@@ -58,8 +50,8 @@ echo.
 echo ERROR: %~1
 echo.
 echo Hint:
-echo   Set XAQ_RUN_DIR to your xAquaticRisk run folder, e.g.:
-echo     set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
+echo   XAQ_RUN_DIR (optional) sets the starting browse root. Default is C:\
+echo   Example: set XAQ_RUN_DIR=D:\MyRuns
 if /I "%NO_PAUSE%"=="1" goto :eof
 pause
 goto :eof

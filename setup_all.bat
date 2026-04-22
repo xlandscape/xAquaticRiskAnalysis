@@ -83,10 +83,12 @@ echo    - Zipped and distributed
 echo    - Deployed without external dependencies
 echo.
 echo  To start the analysis server:
-echo    1. Set environment variable:
-echo       set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
-echo    2. Run: start.bat
-echo    3. Open: http://localhost:8091
+echo    1. Run: start.bat
+echo    2. Open: http://localhost:8091
+echo    3. Select your xAquaticRisk run folder in the Web UI
+echo.
+echo  Optional: set XAQ_RUN_DIR to pre-select the run root:
+echo    set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
 echo.
 if %SILENT%==0 pause
 exit /b 0
