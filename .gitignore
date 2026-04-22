@@ -49,3 +49,16 @@ htmlcov/
 
 # Instance lock files
 server.instance.lock
+
+# Developer scratch/debug files (contain local hard-coded paths)
+analyze_server.py
+check_update.py
+dbg_analyze.py
+dbg_analyze_v2.py
+
+# Temporary server edit artifacts
+server.py.new
+server.py.tmp
+
+# Test HTML artifacts
+index_test.html

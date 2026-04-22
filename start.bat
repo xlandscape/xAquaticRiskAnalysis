@@ -26,14 +26,27 @@ if errorlevel 1 (
 echo [..] Using system Python
 
 :check_rundir
-if not defined XAQ_RUN_DIR set "XAQ_RUN_DIR=C:\"
+if not defined XAQ_RUN_DIR (
+    echo.
+    echo ERROR: XAQ_RUN_DIR is not set.
+    echo.
+    echo Hint: Set XAQ_RUN_DIR to the xAquaticRisk run folder before starting, e.g.:
+    echo   set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
+    echo.
+    if /I "%NO_PAUSE%"=="1" exit /b 1
+    pause
+    exit /b 1
+)
 if not exist "%XAQ_RUN_DIR%" goto :bad_rundir
 
 echo [OK] Run folder : %XAQ_RUN_DIR%
 echo [OK] Port       : %XAQ_PORT%
 echo.
 
-"%PYTHON_EXE%" "%SCRIPT_DIR%server.py" --port %XAQ_PORT% --run-dir "%XAQ_RUN_DIR%" %*
+set "RUN_DIR_ARG=%XAQ_RUN_DIR%"
+if /I "%RUN_DIR_ARG:~-1%"=="\" set "RUN_DIR_ARG=%RUN_DIR_ARG%."
+
+"%PYTHON_EXE%" "%SCRIPT_DIR%server.py" --port %XAQ_PORT% --run-dir "%RUN_DIR_ARG%" %*
 goto :eof
 
 :bad_rundir
@@ -45,8 +58,8 @@ echo.
 echo ERROR: %~1
 echo.
 echo Hint:
-echo   1) Set XAQ_RUN_DIR to your preferred run root (optional)
-echo   2) Without XAQ_RUN_DIR, default is C:\
+echo   Set XAQ_RUN_DIR to your xAquaticRisk run folder, e.g.:
+echo     set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
 if /I "%NO_PAUSE%"=="1" goto :eof
 pause
 goto :eof

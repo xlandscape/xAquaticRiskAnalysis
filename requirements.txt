@@ -1,13 +1,13 @@
 # xAquaticRiskAnalysis/requirements.txt
 # Packages installed into the embedded analysis runtime under analysis\python.
 # Merged from controlpanel and analysis requirements for standalone analysis server.
-# Keep versions compatible with bundled Python 3.9 runtime for xcopy deployment.
+# Keep versions compatible with bundled Python 3.12 runtime for xcopy deployment.
 
-geopandas
+geopandas==1.0.1
 h5py==3.11.0
 matplotlib==3.7.5
 numpy==1.26.4
 openpyxl==3.1.5
 pandas==2.2.3
-pyogrio
+pyogrio==0.10.0
 seaborn==0.13.2
