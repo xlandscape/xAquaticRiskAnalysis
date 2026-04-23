@@ -17,9 +17,11 @@ REM
 REM  To reinstall or upgrade, delete analysis\python\ and re-run this script.
 REM ─────────────────────────────────────────────────────────────────────────────
 
-set PYTHON_VERSION=3.9.7
+set PYTHON_VERSION=3.12.10
 set PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/python-%PYTHON_VERSION%-embed-amd64.zip
 set GET_PIP_URL=https://bootstrap.pypa.io/get-pip.py
+set "NO_PAUSE=%XAQ_NO_PAUSE%"
+if /I "%1"=="--silent" set "NO_PAUSE=1"
 
 set PYTHON_DIR=%~dp0analysis\python
 set REQUIREMENTS=%~dp0analysis\requirements.txt
@@ -142,4 +144,5 @@ echo  To start the analysis server:
 echo    - Set XAQ_RUN_DIR to your xAquaticRisk run folder
 echo    - Run: start.bat
 echo ============================================================
+if /I "%NO_PAUSE%"=="1" goto :eof
 pause

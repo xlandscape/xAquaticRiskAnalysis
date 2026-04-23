@@ -5,11 +5,11 @@
 # by setup_analysis_python.bat and are intended to be copied together with the
 # xAquaticRisk folder for xcopy deployment.
 
-geopandas
-h5py==3.11.0
-matplotlib==3.7.5
-numpy==1.26.4
+geopandas==1.0.1
+h5py==3.14.0
+matplotlib==3.9.4
+numpy==2.0.2
 openpyxl==3.1.5
-pandas==2.2.3
-pyogrio
+pandas==2.3.3
+pyogrio==0.11.1
 seaborn==0.13.2
