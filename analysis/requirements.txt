@@ -1,7 +1,7 @@
 # analysis/requirements.txt
 # Packages installed into the embedded analysis runtime under analysis\python.
 #
-# The versions below stay compatible with the bundled Python 3.9 runtime used
+# The versions below stay compatible with the bundled Python 3.12 runtime used
 # by setup_analysis_python.bat and are intended to be copied together with the
 # xAquaticRisk folder for xcopy deployment.
 

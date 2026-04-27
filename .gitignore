@@ -35,9 +35,7 @@ wheels/
 .DS_Store
 Thumbs.db
 
-# Large binary runtime (handled by LFS or separate distribution)
-analysis/python/
-analysis/lib/
+# Data exports and generated result artifacts
 *.xlsx
 *.csv
 
