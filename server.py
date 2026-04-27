@@ -107,6 +107,10 @@ UI_PROFILE_ENV = "XAQ_UI_PROFILE"
 VALID_UI_PROFILES = {"all", "prep", "analysis"}
 HYDRO_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 HYDRO_ARRAY_DATASETS = ("flow", "depth", "volume", "area")
+MAP_PECSW_DATASETS = (
+    "CascadeToxswa/ConLiqWatTgtAvg",
+    "StepsRiverNetwork/PEC_SW",
+)
 
 # Track analysis jobs: {job_id: {"proc", "output_dir", "started_at", "log_path"}}
 _analysis_jobs = {}
@@ -2478,6 +2482,16 @@ def _decode_text(raw):
     return str(raw)
 
 
+def _select_pecsw_dataset(hf):
+    for dataset_name in MAP_PECSW_DATASETS:
+        if dataset_name in hf:
+            return dataset_name
+    raise KeyError(
+        "No supported PECsw dataset found "
+        f"(expected one of: {', '.join(MAP_PECSW_DATASETS)})"
+    )
+
+
 def _resolve_mc_store_paths(run_root, experiment, mc_run):
     for val, name in ((experiment, "experiment"), (mc_run, "mc_run")):
         if any(c in val for c in (os.sep, "/", "\\", "..")):
@@ -2759,12 +2773,11 @@ def _load_reach_ids_from_hdf(arr_path):
     if h5py is None:
         raise RuntimeError("h5py is not available in this Python runtime")
     with h5py.File(arr_path, "r") as hf:
-        if "CascadeToxswa/ConLiqWatTgtAvg" not in hf:
-            raise KeyError("Dataset CascadeToxswa/ConLiqWatTgtAvg not found")
-        ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+        pecsw_dataset = _select_pecsw_dataset(hf)
+        ds = hf[pecsw_dataset]
         names_ref = ds.attrs.get("dim1_element_names")
         if names_ref is None:
-            raise KeyError("dim1_element_names attribute missing")
+            raise KeyError(f"dim1_element_names attribute missing on dataset {pecsw_dataset}")
         try:
             raw_ids = hf[names_ref][:]
         except Exception:
@@ -2893,7 +2906,14 @@ if not shp_path:
     raise RuntimeError("No shapefile found for selected scenario")
 
 with h5py.File(arr_path, "r") as hf:
-    ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+    ds_name = None
+    for candidate in ("CascadeToxswa/ConLiqWatTgtAvg", "StepsRiverNetwork/PEC_SW"):
+        if candidate in hf:
+            ds_name = candidate
+            break
+    if ds_name is None:
+        raise RuntimeError("No supported PECsw dataset found (expected CascadeToxswa/ConLiqWatTgtAvg or StepsRiverNetwork/PEC_SW)")
+    ds = hf[ds_name]
     names_ref = ds.attrs["dim1_element_names"]
     try:
         raw_ids = hf[names_ref][:]
@@ -2984,6 +3004,7 @@ print(json.dumps({
     "geojson": geojson,
     "lulc_geojson": lulc_geojson,
     "meta": {
+        "pecsw_dataset": ds_name,
         "reach_id_field": best_col,
         "feature_count": len(geojson.get("features", [])),
         "bounds": [float(minx), float(miny), float(maxx), float(maxy)],
@@ -3024,7 +3045,14 @@ time_to = payload.get("time_to")
 resolution = (payload.get("resolution") or "auto").lower()
 
 with h5py.File(arr_path, "r") as hf:
-    ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+    ds_name = None
+    for candidate in ("CascadeToxswa/ConLiqWatTgtAvg", "StepsRiverNetwork/PEC_SW"):
+        if candidate in hf:
+            ds_name = candidate
+            break
+    if ds_name is None:
+        raise RuntimeError("No supported PECsw dataset found (expected CascadeToxswa/ConLiqWatTgtAvg or StepsRiverNetwork/PEC_SW)")
+    ds = hf[ds_name]
     names_ref = ds.attrs["dim1_element_names"]
     try:
         raw_ids = hf[names_ref][:]
@@ -3091,6 +3119,7 @@ print(json.dumps({
     "times": times,
     "series": series,
     "meta": {
+        "pecsw_dataset": ds_name,
         "units": "ng/L",
         "resolution_used": resolution,
         "requested_resolution": (payload.get("resolution") or "auto").lower(),
@@ -3208,9 +3237,8 @@ def _build_map_timeseries(arr_path, reach_ids, time_from=None, time_to=None, res
         return cached
 
     with h5py.File(arr_path, "r") as hf:
-        if "CascadeToxswa/ConLiqWatTgtAvg" not in hf:
-            raise KeyError("Dataset CascadeToxswa/ConLiqWatTgtAvg not found")
-        ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+        pecsw_dataset = _select_pecsw_dataset(hf)
+        ds = hf[pecsw_dataset]
         names_ref = ds.attrs.get("dim1_element_names")
         try:
             raw_ids = hf[names_ref][:]
@@ -3272,6 +3300,7 @@ def _build_map_timeseries(arr_path, reach_ids, time_from=None, time_to=None, res
         "times": times,
         "series": series,
         "meta": {
+            "pecsw_dataset": pecsw_dataset,
             "units": "ng/L",
             "resolution_used": resolution_used,
             "requested_resolution": (resolution or "auto").lower(),
