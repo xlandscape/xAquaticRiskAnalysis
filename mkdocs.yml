@@ -46,7 +46,14 @@ markdown_extensions:
 
 nav:
   - Home: 'index.md'
-  - Get Started: 'getstarted/getstarted.md'
+  - Quick Start: 'getstarted/getstarted.md'
+  - User Guide:
+    - Installation: 'guide/installation.md'
+    - Configuration: 'guide/configuration.md'
+    - Running Analysis: 'guide/analysis.md'
+    - Output & Results: 'guide/results.md'
   - Reference:
-    - Configuration: 'reference/configuration.md'
+    - Architecture: 'reference/architecture.md'
+    - Configuration Reference: 'reference/configuration.md'
     - API Endpoints: 'reference/api.md'
+  - About: 'about.md'
