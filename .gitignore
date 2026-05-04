@@ -61,3 +61,8 @@ server.py.tmp
 
 # Test HTML artifacts
 index_test.html
+
+# Keep embedded analysis runtime packages versionable for xcopy-ready clones.
+!analysis/python/Lib/
+!analysis/python/Lib/site-packages/
+!analysis/python/Lib/site-packages/**
