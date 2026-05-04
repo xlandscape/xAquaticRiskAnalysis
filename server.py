@@ -107,6 +107,10 @@ UI_PROFILE_ENV = "XAQ_UI_PROFILE"
 VALID_UI_PROFILES = {"all", "prep", "analysis"}
 HYDRO_TIME_FORMAT = "%Y-%m-%dT%H:%M"
 HYDRO_ARRAY_DATASETS = ("flow", "depth", "volume", "area")
+MAP_PECSW_DATASETS = (
+    "CascadeToxswa/ConLiqWatTgtAvg",
+    "StepsRiverNetwork/PEC_SW",
+)
 
 # Track analysis jobs: {job_id: {"proc", "output_dir", "started_at", "log_path"}}
 _analysis_jobs = {}
@@ -120,6 +124,28 @@ _MAP_TIMESERIES_CACHE_LIMIT = 32
 _MAP_HOURLY_MAX_POINTS = 500000
 _INSTANCE_LOCK_PATH = os.path.join(CPANEL_DIR, "server.instance.lock")
 _INSTANCE_LOCK_HELD = False
+
+PARAM_FILE_EXTENSIONS = (".xrun", ".yaml", ".yml")
+
+# Optional parallel CSV backend; presence is detected at startup, absence is silent.
+step2_backend = None
+try:
+    import step2_pandas_backend as step2_backend  # type: ignore
+except Exception:
+    pass
+
+# Scenario subset job tracking
+_subset_jobs: dict = {}
+_subset_lock = threading.Lock()
+
+# Running simulation process tracking (only processes launched in this session)
+_running_processes: dict = {}
+_running_started_at: dict = {}
+_proc_lock = threading.Lock()
+
+
+class SubsetJobCancelled(Exception):
+    """Raised inside subset worker to signal a cancellation request."""
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -2478,6 +2504,16 @@ def _decode_text(raw):
     return str(raw)
 
 
+def _select_pecsw_dataset(hf):
+    for dataset_name in MAP_PECSW_DATASETS:
+        if dataset_name in hf:
+            return dataset_name
+    raise KeyError(
+        "No supported PECsw dataset found "
+        f"(expected one of: {', '.join(MAP_PECSW_DATASETS)})"
+    )
+
+
 def _resolve_mc_store_paths(run_root, experiment, mc_run):
     for val, name in ((experiment, "experiment"), (mc_run, "mc_run")):
         if any(c in val for c in (os.sep, "/", "\\", "..")):
@@ -2759,12 +2795,11 @@ def _load_reach_ids_from_hdf(arr_path):
     if h5py is None:
         raise RuntimeError("h5py is not available in this Python runtime")
     with h5py.File(arr_path, "r") as hf:
-        if "CascadeToxswa/ConLiqWatTgtAvg" not in hf:
-            raise KeyError("Dataset CascadeToxswa/ConLiqWatTgtAvg not found")
-        ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+        pecsw_dataset = _select_pecsw_dataset(hf)
+        ds = hf[pecsw_dataset]
         names_ref = ds.attrs.get("dim1_element_names")
         if names_ref is None:
-            raise KeyError("dim1_element_names attribute missing")
+            raise KeyError(f"dim1_element_names attribute missing on dataset {pecsw_dataset}")
         try:
             raw_ids = hf[names_ref][:]
         except Exception:
@@ -2893,7 +2928,14 @@ if not shp_path:
     raise RuntimeError("No shapefile found for selected scenario")
 
 with h5py.File(arr_path, "r") as hf:
-    ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+    ds_name = None
+    for candidate in ("CascadeToxswa/ConLiqWatTgtAvg", "StepsRiverNetwork/PEC_SW"):
+        if candidate in hf:
+            ds_name = candidate
+            break
+    if ds_name is None:
+        raise RuntimeError("No supported PECsw dataset found (expected CascadeToxswa/ConLiqWatTgtAvg or StepsRiverNetwork/PEC_SW)")
+    ds = hf[ds_name]
     names_ref = ds.attrs["dim1_element_names"]
     try:
         raw_ids = hf[names_ref][:]
@@ -2984,6 +3026,7 @@ print(json.dumps({
     "geojson": geojson,
     "lulc_geojson": lulc_geojson,
     "meta": {
+        "pecsw_dataset": ds_name,
         "reach_id_field": best_col,
         "feature_count": len(geojson.get("features", [])),
         "bounds": [float(minx), float(miny), float(maxx), float(maxy)],
@@ -3024,7 +3067,14 @@ time_to = payload.get("time_to")
 resolution = (payload.get("resolution") or "auto").lower()
 
 with h5py.File(arr_path, "r") as hf:
-    ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+    ds_name = None
+    for candidate in ("CascadeToxswa/ConLiqWatTgtAvg", "StepsRiverNetwork/PEC_SW"):
+        if candidate in hf:
+            ds_name = candidate
+            break
+    if ds_name is None:
+        raise RuntimeError("No supported PECsw dataset found (expected CascadeToxswa/ConLiqWatTgtAvg or StepsRiverNetwork/PEC_SW)")
+    ds = hf[ds_name]
     names_ref = ds.attrs["dim1_element_names"]
     try:
         raw_ids = hf[names_ref][:]
@@ -3091,6 +3141,7 @@ print(json.dumps({
     "times": times,
     "series": series,
     "meta": {
+        "pecsw_dataset": ds_name,
         "units": "ng/L",
         "resolution_used": resolution,
         "requested_resolution": (payload.get("resolution") or "auto").lower(),
@@ -3208,9 +3259,8 @@ def _build_map_timeseries(arr_path, reach_ids, time_from=None, time_to=None, res
         return cached
 
     with h5py.File(arr_path, "r") as hf:
-        if "CascadeToxswa/ConLiqWatTgtAvg" not in hf:
-            raise KeyError("Dataset CascadeToxswa/ConLiqWatTgtAvg not found")
-        ds = hf["CascadeToxswa/ConLiqWatTgtAvg"]
+        pecsw_dataset = _select_pecsw_dataset(hf)
+        ds = hf[pecsw_dataset]
         names_ref = ds.attrs.get("dim1_element_names")
         try:
             raw_ids = hf[names_ref][:]
@@ -3272,6 +3322,7 @@ def _build_map_timeseries(arr_path, reach_ids, time_from=None, time_to=None, res
         "times": times,
         "series": series,
         "meta": {
+            "pecsw_dataset": pecsw_dataset,
             "units": "ng/L",
             "resolution_used": resolution_used,
             "requested_resolution": (resolution or "auto").lower(),
@@ -3824,6 +3875,39 @@ class ControlPanelHandler(SimpleHTTPRequestHandler):
             filename = p[5] if len(p) > 5 else ""
             self._serve_analysis_file(job_id, filename)
 
+        # -- scenarios (used by Temporal Subset and Parameterisation tabs) --
+        elif path == "/api/scenarios":
+            self._json_response(get_scenarios())
+        elif path == "/api/scenario-extent":
+            scenario_path = self._query_params().get("path", "")
+            try:
+                payload = get_scenario_extent(scenario_path)
+                status = 400 if payload.get("error") else 200
+                self._json_response(payload, status)
+            except Exception as exc:
+                self._json_response({"error": f"Scenario extent failed: {exc}"}, 500)
+        elif path == "/api/scenario-inspect":
+            scenario_path = self._query_params().get("path", "")
+            try:
+                payload = inspect_scenario(scenario_path)
+                status = 400 if payload.get("error") else 200
+                self._json_response(payload, status)
+            except Exception as exc:
+                self._json_response({"error": f"Scenario inspect failed: {exc}"}, 500)
+        elif path == "/api/scenario-geometry":
+            scenario_path = self._query_params().get("path", "")
+            try:
+                self._json_response({"status": "success", **build_scenario_geometry(scenario_path)})
+            except Exception as exc:
+                self._json_response({"status": "error", "message": str(exc)}, 400)
+        elif path.startswith("/api/scenario-subset/status/"):
+            job_id = path.rstrip("/").split("/")[4]
+            payload = subset_job_status(job_id)
+            status = 404 if payload.get("error") else 200
+            self._json_response(payload, status)
+        elif path == "/api/log-warning-downgrades":
+            self._json_response({"rules": get_warning_downgrade_rules()})
+
         else:
             super().do_GET()
 
@@ -3835,7 +3919,13 @@ class ControlPanelHandler(SimpleHTTPRequestHandler):
         if path != "/":
             path = path.rstrip("/")
         try:
-            if path == "/api/map-explorer/geometry":
+            if path == "/api/scenario-subset/start":
+                self._handle_scenario_subset_start()
+            elif path.startswith("/api/scenario-subset/cancel/"):
+                self._handle_scenario_subset_cancel(path)
+            elif path == "/api/scenario-subset":
+                self._handle_scenario_subset()
+            elif path == "/api/map-explorer/geometry":
                 self._handle_map_geometry()
             elif path == "/api/map-explorer/timeseries":
                 self._handle_map_timeseries()
@@ -3847,6 +3937,79 @@ class ControlPanelHandler(SimpleHTTPRequestHandler):
             self._json_response({"status": "error", "message": str(exc)}, 500)
 
     # ── POST handlers ─────────────────────────────────────────────
+
+    def _handle_scenario_subset(self):
+        data = self._read_json_body() or {}
+        source_scenario = (data.get("source_scenario") or "").strip()
+        target_name = (data.get("target_name") or "").strip()
+        subset_start = (data.get("subset_start") or "").strip()
+        subset_end = (data.get("subset_end") or "").strip()
+        selected_reaches = data.get("selected_reaches") or []
+        max_lulc_distance = int(data.get("max_lulc_distance") or 100)
+        max_number_cores = _coerce_max_number_cores(data.get("max_number_cores"))
+        if not source_scenario or not target_name or not subset_start or not subset_end:
+            return self._json_response(
+                {"status": "error", "message": "source_scenario, target_name, subset_start, and subset_end are required"},
+                400,
+            )
+        try:
+            payload = create_scenario_subset(
+                source_scenario,
+                target_name,
+                subset_start,
+                subset_end,
+                selected_reaches=selected_reaches,
+                max_lulc_distance=max_lulc_distance,
+                max_number_cores=max_number_cores,
+            )
+            self._json_response({
+                "status": "success",
+                "message": f"Created subset scenario {payload['scenario_path']}",
+                **payload,
+            })
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 400)
+
+    def _handle_scenario_subset_start(self):
+        data = self._read_json_body() or {}
+        source_scenario = (data.get("source_scenario") or "").strip()
+        target_name = (data.get("target_name") or "").strip()
+        subset_start = (data.get("subset_start") or "").strip()
+        subset_end = (data.get("subset_end") or "").strip()
+        selected_reaches = data.get("selected_reaches") or []
+        max_lulc_distance = int(data.get("max_lulc_distance") or 100)
+        max_number_cores = _coerce_max_number_cores(data.get("max_number_cores"))
+        if not source_scenario or not target_name or not subset_start or not subset_end:
+            return self._json_response(
+                {"status": "error", "message": "source_scenario, target_name, subset_start, and subset_end are required"},
+                400,
+            )
+        try:
+            job_id = start_subset_job(
+                source_scenario,
+                target_name,
+                subset_start,
+                subset_end,
+                selected_reaches=selected_reaches,
+                max_lulc_distance=max_lulc_distance,
+                max_number_cores=max_number_cores,
+            )
+            self._json_response({
+                "status": "success",
+                "job_id": job_id,
+                "message": "Subset creation started",
+            })
+        except Exception as exc:
+            self._json_response({"status": "error", "message": str(exc)}, 400)
+
+    def _handle_scenario_subset_cancel(self, path: str):
+        job_id = path.rstrip("/").split("/")[4] if path else ""
+        if not job_id:
+            return self._json_response({"status": "error", "message": "job_id is required"}, 400)
+        payload = cancel_subset_job(job_id)
+        if payload.get("error"):
+            return self._json_response({"status": "error", "message": payload["error"]}, 404)
+        self._json_response({"status": "success", **payload})
 
     def _handle_map_geometry(self):
         data = self._read_json_body() or {}

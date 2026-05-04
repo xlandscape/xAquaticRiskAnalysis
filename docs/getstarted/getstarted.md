@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Windows 64-bit** (required for the bundled analysis Python runtime)
-- **Python 3.9 or later** — only needed if you are *not* using the bundled `analysis/python/` runtime
+- **No system Python required** for normal use (bundled `analysis/python/` runtime is included)
 - A completed xAquaticRisk simulation in a `run/` folder that you have read access to
 
 If the bundled runtime is already present and `start.bat` works, you do **not** need to run `setup_all.bat`.

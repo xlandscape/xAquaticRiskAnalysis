@@ -26,19 +26,18 @@ git clone https://github.com/xlandscape/xAquaticRiskAnalysis.git
 cd xAquaticRiskAnalysis
 ```
 
-### 2. Setup (developers only — end users skip this)
+### 2. Start Directly
 
 ```powershell
-# Create embedded Python runtime and install all dependencies
-# This makes your folder xcopy-ready (~5-10 min, one-time only)
-.\setup_all.bat
+# Start immediately (bundled runtime is included in this repository)
+.\start.bat
 ```
 
-This step:
-- Downloads Python 3.9 (embeddable, no installation)
-- Installs analysis packages (h5py, pandas, geopandas, matplotlib, etc.)
-- Validates everything works
-- After this, your folder can be ZIP'd and shared without further setup
+If your checkout is missing `analysis\python\python.exe` (for example, a partial copy), rebuild it once:
+
+```powershell
+.\setup_all.bat
+```
 
 ### 3. Configure Run Directory
 
@@ -52,11 +51,11 @@ set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
 # Or: [Environment]::SetEnvironmentVariable("XAQ_RUN_DIR", "C:\path\to\xAquaticRisk\run", "User")
 ```
 
-### 4. Start the Server
+### 4. Open the Server
 
 ```powershell
-# From xAquaticRiskAnalysis folder:
-.\start.bat
+# Default URL
+http://localhost:8091
 ```
 
 Open `http://localhost:8091` in your browser.
@@ -85,15 +84,15 @@ If you're integrating analysis payload from xAquaticRisk (e.g., after pulling ch
 ```
 xAquaticRiskAnalysis/
 ├── start.bat                    ← Launch the server (auto-detects bundled Python)
-├── setup_all.bat                ← One-time setup (creates bundled runtime)
-├── setup_analysis_python.bat    ← Rebuild Python runtime if needed
+├── setup_all.bat                ← Rebuild/validate bundled runtime (maintainers)
+├── setup_analysis_python.bat    ← Rebuild analysis runtime if needed
 ├── server.py                    ← HTTP server (port 8091)
 ├── index.html                   ← Web UI (analysis + map explorer)
 ├── analysis/
 │   ├── run_basic_analysis.py   ← Analysis engine
 │   ├── basic_analysis_common.py ← Shared utilities
 │   ├── requirements.txt         ← Package list for setup
-│   ├── python/                  ← Bundled Python (created by setup)
+│   ├── python/                  ← Bundled Python (committed with repo)
 │   └── ...
 └── scripts/
     ├── integrate_analysis_payload.ps1    ← Copy from xAquaticRisk
@@ -139,7 +138,7 @@ xAquaticRiskAnalysis/
 
 ## Development
 
-- **Python**: 3.9.7 (embeddable runtime)
+- **Python**: 3.12.x (embeddable runtime)
 - **Dependencies**: See `analysis/requirements.txt`
 - **License**: As per xlandscape organization terms
 

@@ -41,7 +41,7 @@ echo [OK] All required files present
 echo.
 
 REM -- Step 2: Set up analysis Python runtime ------------------------------------
-echo [2/3] Setting up Python 3.9 runtime (this may take 5-10 minutes)...
+echo [2/3] Setting up Python 3.12 runtime (this may take 5-10 minutes)...
 if exist "analysis\python\python.exe" (
     echo [OK] Python runtime already exists, validating...
 ) else (
@@ -83,10 +83,12 @@ echo    - Zipped and distributed
 echo    - Deployed without external dependencies
 echo.
 echo  To start the analysis server:
-echo    1. Set environment variable:
-echo       set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
-echo    2. Run: start.bat
-echo    3. Open: http://localhost:8091
+echo    1. Run: start.bat
+echo    2. Open: http://localhost:8091
+echo    3. Select your xAquaticRisk run folder in the Web UI
+echo.
+echo  Optional: set XAQ_RUN_DIR to pre-select the run root:
+echo    set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
 echo.
 if %SILENT%==0 pause
 exit /b 0
