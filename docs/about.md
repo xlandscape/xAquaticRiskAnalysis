@@ -39,15 +39,15 @@ All components are developed by the **xlandscape team** at Agroecology, Universi
 
 ## Community & Support
 
-- **GitHub Repository** – https://github.com/xlandscape/xAquaticRiskAnalysis
+- **GitHub Repository** – [xlandscape/xAquaticRiskAnalysis](https://github.com/xlandscape/xAquaticRiskAnalysis)
 - **Issue Tracker** – Report bugs and suggest features
-- **xlandscape Docs** – https://xlandscape.github.io/
+- **xlandscape Docs** – [xlandscape.github.io](https://xlandscape.github.io/)
 
 ## Citation
 
 If you use xAquaticRiskAnalysis in your research, please cite:
 
-> xlandscape Development Team (2024). xAquaticRiskAnalysis: Web-based analysis tool for aquatic risk assessment. University of Bonn, Germany. https://github.com/xlandscape/xAquaticRiskAnalysis
+> xlandscape Development Team (2024). xAquaticRiskAnalysis: Web-based analysis tool for aquatic risk assessment. University of Bonn, Germany. [https://github.com/xlandscape/xAquaticRiskAnalysis](https://github.com/xlandscape/xAquaticRiskAnalysis)
 
 ## License
 
@@ -62,6 +62,6 @@ See [LICENSE](https://github.com/xlandscape/xAquaticRiskAnalysis/blob/main/LICEN
 
 ---
 
-**Current Version:** 0.1.1  
+**Current Version:** 0.2.5  
 **Last Updated:** May 4, 2026  
 **Development Status:** Actively maintained

@@ -4,7 +4,7 @@ Standalone analysis and reporting web interface for xAquaticRisk simulations.
 
 **xcopy-ready**: Copy the folder to any Windows machine and run `start.bat` — no installation or dependencies required.
 
-📖 **[Read Full Documentation](https://xlandscape.github.io/xAquaticRiskAnalysis/)** — Installation, configuration, API reference, and architecture guide.
+📖 **[Read Full Documentation](https://xlandscape.github.io/xAquaticRiskAnalysis/index.html)** — Installation, configuration, API reference, and architecture guide.
 
 ## Quick Start
 
@@ -16,12 +16,13 @@ Standalone analysis and reporting web interface for xAquaticRisk simulations.
 ### 1. Download or Clone
 
 **Clone:**
+
 ```powershell
 git clone https://github.com/xlandscape/xAquaticRiskAnalysis.git
 cd xAquaticRiskAnalysis
 ```
 
-**Or download ZIP** from https://github.com/xlandscape/xAquaticRiskAnalysis
+**Or download ZIP** from [xlandscape/xAquaticRiskAnalysis](https://github.com/xlandscape/xAquaticRiskAnalysis)
 
 ### 2. Run
 
@@ -33,7 +34,7 @@ cd xAquaticRiskAnalysis
 
 ### 3. Open Browser
 
-```
+```text
 http://localhost:8091
 ```
 
@@ -57,14 +58,15 @@ set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
 
 Or set `XAQ_RUN_DIR` permanently in Windows environment variables.
 
-See [Configuration Reference](https://xlandscape.github.io/xAquaticRiskAnalysis/reference/configuration/) for all options.
+See [Configuration Reference](https://xlandscape.github.io/xAquaticRiskAnalysis/reference/configuration.html) for all options.
 
 ## Documentation
 
-- **[Installation Guide](https://xlandscape.github.io/xAquaticRiskAnalysis/guide/installation/)** – Setup and first run
-- **[User Guide](https://xlandscape.github.io/xAquaticRiskAnalysis/guide/analysis/)** – Running analyses and downloading results
-- **[Reference](https://xlandscape.github.io/xAquaticRiskAnalysis/reference/)** – Configuration, API, architecture
-- **[About](https://xlandscape.github.io/xAquaticRiskAnalysis/about/)** – xlandscape framework overview
+- **[Documentation Home](https://xlandscape.github.io/xAquaticRiskAnalysis/index.html)** – Canonical entry point for the published docs
+- **[Installation Guide](https://xlandscape.github.io/xAquaticRiskAnalysis/guide/installation.html)** – Setup and first run
+- **[User Guide](https://xlandscape.github.io/xAquaticRiskAnalysis/guide/analysis.html)** – Running analyses and downloading results
+- **[Reference](https://xlandscape.github.io/xAquaticRiskAnalysis/reference/architecture.html)** – Configuration, API, architecture
+- **[About](https://xlandscape.github.io/xAquaticRiskAnalysis/about.html)** – xlandscape framework overview
 
 ## For Developers
 
@@ -85,7 +87,7 @@ If you're integrating analysis payload from xAquaticRisk (e.g., after pulling ch
 
 ## Architecture
 
-```
+```text
 xAquaticRiskAnalysis/
 ├── start.bat                    ← Launch the server (auto-detects bundled Python)
 ├── setup_all.bat                ← Rebuild/validate bundled runtime (maintainers)
@@ -107,14 +109,12 @@ xAquaticRiskAnalysis/
 
 ## Environment Variables
 
-| Variable       | Purpose | Example |
-|---|---|---|
-| `XAQ_RUN_DIR`  | Path to shared `run/` folder | `C:\LocalWork\xAquaticRisk\run` |
-| `XAQ_PORT`     | Server port (optional) | `8091` (default) |
+- `XAQ_RUN_DIR`: Path to the shared `run/` folder. Example: `C:\LocalWork\xAquaticRisk\run`
+- `XAQ_PORT`: Optional server port override. Example: `8091`
 
 ---
 
-## Features
+## Capabilities
 
 - **Analysis**: Run PEC and GUTS-RA analyses on simulations
 - **Map Explorer**: View reach/LULC geometries and timeseries
@@ -125,16 +125,19 @@ xAquaticRiskAnalysis/
 
 ## Troubleshooting
 
-**Server won't start**
+### Server won't start
+
 - Verify `XAQ_RUN_DIR` is set and points to an existing folder
 - Check port 8091 isn't in use: `netstat -ano | findstr :8091`
 - Try custom port: `start.bat 9000`
 
-**Python/package errors**
+### Python/package errors
+
 - Delete `analysis\python\` and re-run `setup_analysis_python.bat`
 - Or use system Python if setup fails: `python server.py --run-dir C:\...`
 
-**Analysis jobs fail**
+### Analysis jobs fail
+
 - Check `analysis_output/` folder for error logs
 - Ensure run folder contains completed xAquaticRisk outputs (hydro.h5, etc.)
 
