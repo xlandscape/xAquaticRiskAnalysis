@@ -37,7 +37,7 @@ echo.
 if not exist "%REQUIREMENTS%" (
     echo ERROR: Requirements file not found.
     echo Expected: %REQUIREMENTS%
-    pause
+    if /I not "%NO_PAUSE%"=="1" pause
     exit /b 1
 )
 
@@ -58,7 +58,7 @@ if "%NEED_DOWNLOAD%"=="1" (
     if errorlevel 1 (
         echo.
         echo ERROR: Download failed. Check your internet connection.
-        pause
+        if /I not "%NO_PAUSE%"=="1" pause
         exit /b 1
     )
 ) else (
@@ -95,14 +95,14 @@ if errorlevel 1 (
     if errorlevel 1 (
         echo.
         echo ERROR: Failed to download get-pip.py.
-        pause
+        if /I not "%NO_PAUSE%"=="1" pause
         exit /b 1
     )
     "%PYTHON_DIR%\python.exe" "%PYTHON_DIR%\get-pip.py" --no-warn-script-location --quiet
     if errorlevel 1 (
         echo.
         echo ERROR: Failed to install pip into the embedded analysis runtime.
-        pause
+        if /I not "%NO_PAUSE%"=="1" pause
         exit /b 1
     )
     del "%PYTHON_DIR%\get-pip.py"
@@ -111,7 +111,7 @@ if errorlevel 1 (
 if errorlevel 1 (
     echo.
     echo ERROR: Failed to upgrade pip tooling in the embedded analysis runtime.
-    pause
+    if /I not "%NO_PAUSE%"=="1" pause
     exit /b 1
 )
 
@@ -126,7 +126,7 @@ if errorlevel 1 (
     echo.
     echo ERROR: Package installation failed.
     echo Check the error messages above and re-run after resolving them.
-    pause
+    if /I not "%NO_PAUSE%"=="1" pause
     exit /b 1
 )
 

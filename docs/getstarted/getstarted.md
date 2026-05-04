@@ -56,7 +56,8 @@ From the `xAquaticRiskAnalysis` folder, run:
 start.bat
 ```
 
-`start.bat` automatically detects the bundled `analysis\python\python.exe` runtime if present; otherwise it falls back to whichever `python` is on `PATH`.
+`start.bat` automatically validates the bundled `analysis\python\python.exe` runtime and repairs/rebuilds it when missing or incomplete.
+No separate setup command is required for normal first launch.
 
 The server starts on port **8091** by default. Open your browser and navigate to:
 

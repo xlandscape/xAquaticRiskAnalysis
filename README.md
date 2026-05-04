@@ -29,11 +29,14 @@ cd xAquaticRiskAnalysis
 ### 2. Start Directly
 
 ```powershell
-# Start immediately (bundled runtime is included in this repository)
+# Start immediately
 .\start.bat
 ```
 
-If your checkout is missing `analysis\python\python.exe` (for example, a partial copy), rebuild it once:
+`start.bat` now self-checks the embedded analysis runtime and automatically repairs/rebuilds it when missing or incomplete.
+No manual setup step is required for normal first-time use.
+
+If you need to rebuild explicitly (maintainers/debugging):
 
 ```powershell
 .\setup_all.bat
