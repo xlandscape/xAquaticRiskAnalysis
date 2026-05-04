@@ -45,6 +45,7 @@ Thumbs.db
 .mypy_cache/
 .tox/
 htmlcov/
+site/
 
 # Instance lock files
 server.instance.lock
