@@ -4,68 +4,69 @@ Standalone analysis and reporting web interface for xAquaticRisk simulations.
 
 **xcopy-ready**: Copy the folder to any Windows machine and run `start.bat` — no installation or dependencies required.
 
+📖 **[Read Full Documentation](https://xlandscape.github.io/xAquaticRiskAnalysis/)** — Installation, configuration, API reference, and architecture guide.
+
 ## Quick Start
 
 ### Prerequisites
 
-- Windows 7 SP1 or later (any Windows that supports Python 3.9)
-- Completed xAquaticRisk simulation run(s) in a `run/` folder
+- **Windows 64-bit** (any version with Python 3.9+)
+- A completed xAquaticRisk simulation run
 
 ### 1. Download or Clone
 
-**Option A: Released ZIP (end users)**
-```
-Unzip xAquaticRiskAnalysis.zip to any folder
-→ Includes everything: analysis scripts, bundled Python, UI
-→ No setup needed
-```
-
-**Option B: Clone from GitHub (developers)**
+**Clone:**
 ```powershell
 git clone https://github.com/xlandscape/xAquaticRiskAnalysis.git
 cd xAquaticRiskAnalysis
 ```
 
-### 2. Start Directly
+**Or download ZIP** from https://github.com/xlandscape/xAquaticRiskAnalysis
+
+### 2. Run
 
 ```powershell
-# Start immediately
 .\start.bat
 ```
 
-`start.bat` now self-checks the embedded analysis runtime and automatically repairs/rebuilds it when missing or incomplete.
-No manual setup step is required for normal first-time use.
+`start.bat` automatically detects and repairs the embedded Python runtime on first launch. No manual setup required.
 
-If you need to rebuild explicitly (maintainers/debugging):
+### 3. Open Browser
 
-```powershell
-.\setup_all.bat
 ```
-
-### 3. Configure Run Directory
-
-Set `XAQ_RUN_DIR` to point to your xAquaticRisk `run/` folder:
-
-```powershell
-# Temporary (this session only)
-set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
-
-# Permanent (Windows Control Panel → Environment Variables)
-# Or: [Environment]::SetEnvironmentVariable("XAQ_RUN_DIR", "C:\path\to\xAquaticRisk\run", "User")
-```
-
-### 4. Open the Server
-
-```powershell
-# Default URL
 http://localhost:8091
 ```
 
-Open `http://localhost:8091` in your browser.
+## Features
 
----
+- ✅ **Auto-bootstrap** – Embedded Python runtime self-repairs on first start
+- ✅ **Zero-install** – Bundled dependencies; copy-and-go deployment  
+- ✅ **Web UI** – Real-time analysis job submission and result download
+- ✅ **Map explorer** – Interactive reach and LULC geometry viewer
+- ✅ **Publication output** – Excel tables, PNG figures, JSON/CSV data
+- ✅ **Multi-user** – Run on shared LAN server for team collaboration
 
-## For Developers: Integration Workflow
+## Configuration
+
+Set your simulation folder:
+
+```powershell
+set XAQ_RUN_DIR=C:\path\to\xAquaticRisk\run
+.\start.bat
+```
+
+Or set `XAQ_RUN_DIR` permanently in Windows environment variables.
+
+See [Configuration Reference](https://xlandscape.github.io/xAquaticRiskAnalysis/reference/configuration/) for all options.
+
+## Documentation
+
+- **[Installation Guide](https://xlandscape.github.io/xAquaticRiskAnalysis/guide/installation/)** – Setup and first run
+- **[User Guide](https://xlandscape.github.io/xAquaticRiskAnalysis/guide/analysis/)** – Running analyses and downloading results
+- **[Reference](https://xlandscape.github.io/xAquaticRiskAnalysis/reference/)** – Configuration, API, architecture
+- **[About](https://xlandscape.github.io/xAquaticRiskAnalysis/about/)** – xlandscape framework overview
+
+## For Developers
 
 If you're integrating analysis payload from xAquaticRisk (e.g., after pulling changes):
 
