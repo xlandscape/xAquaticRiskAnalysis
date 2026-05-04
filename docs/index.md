@@ -14,7 +14,7 @@ After xAquaticRisk has completed one or more Monte Carlo simulation runs, xARA p
 
 xARA is intentionally **separate** from the xAquaticRisk prep-and-run control panel. The two applications share only a single folder on disk — the `run/` folder that xAquaticRisk writes simulation output into — and communicate that location through the [`XAQ_RUN_DIR`](reference/configuration.md#xaq_run_dir) environment variable.
 
-```
+```text
 xAquaticRisk (port 8090)          xAquaticRiskAnalysis (port 8091)
   ├── controlpanel/                  ├── server.py
   ├── run/  ◄────────────────────────────── XAQ_RUN_DIR
@@ -29,6 +29,8 @@ This separation means:
 - Updates to the analysis tooling do not require touching the simulation server.
 
 ## Quick start
+
+Published documentation entry point: [https://xlandscape.github.io/xAquaticRiskAnalysis/index.html](https://xlandscape.github.io/xAquaticRiskAnalysis/index.html)
 
 See [Get Started](getstarted/getstarted.md) for installation and launch instructions.  
 See [Configuration](reference/configuration.md) for all environment variables and command-line options, including [`XAQ_RUN_DIR`](reference/configuration.md#xaq_run_dir).
